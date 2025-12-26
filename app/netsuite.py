@@ -21,7 +21,7 @@ def get_access_token():
 
     token_url = (
         f"https://{NETSUITE_ACCOUNT_ID}"
-        ".suitetalk.api.netsuite.com/services/rest/auth/oauth2/v1/token"
+        ".suitetalk.api.netsuite.com/services/rest/auth/oauth2/v2/token"
     )
 
     payload = {
