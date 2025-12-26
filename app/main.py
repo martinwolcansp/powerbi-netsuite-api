@@ -15,10 +15,7 @@ def health_netsuite():
         }
 
     url = f"https://{account_id}.restlets.api.netsuite.com/app/site/hosting/restlet.nl"
-    params = {
-        "script": "2089",
-        "deploy": "1"
-    }
+    params = {"script": "2089", "deploy": "1"}
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -26,12 +23,7 @@ def health_netsuite():
     }
 
     start = time.time()
-    response = requests.get(
-        url,
-        headers=headers,
-        params=params,
-        timeout=120
-    )
+    response = requests.get(url, headers=headers, params=params, timeout=120)
 
     return {
         "http_status": response.status_code,
