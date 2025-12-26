@@ -1,7 +1,33 @@
+# /app/main.py
+from fastapi import FastAPI
+from app.powerbi import router as powerbi_router
 import os
 import requests
 import time
 
+# ==============================
+# 1️⃣ Crear la app FastAPI
+# ==============================
+app = FastAPI(
+    title="NetSuite → Power BI API",
+    version="1.0.0"
+)
+
+# ==============================
+# 2️⃣ Incluir router de Power BI
+# ==============================
+app.include_router(powerbi_router)
+
+# ==============================
+# 3️⃣ Healthcheck básico
+# ==============================
+@app.get("/")
+def healthcheck():
+    return {"status": "ok"}
+
+# ==============================
+# 4️⃣ Healthcheck NetSuite
+# ==============================
 @app.get("/health/netsuite")
 def health_netsuite():
     account_id = os.getenv("NETSUITE_ACCOUNT_ID")
@@ -23,11 +49,13 @@ def health_netsuite():
     }
 
     start = time.time()
-    response = requests.get(url, headers=headers, params=params, timeout=120)
-
-    return {
-        "http_status": response.status_code,
-        "elapsed_seconds": round(time.time() - start, 2),
-        "response_size": len(response.text),
-        "preview": response.text[:300]
-    }
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=120)
+        return {
+            "http_status": response.status_code,
+            "elapsed_seconds": round(time.time() - start, 2),
+            "response_size": len(response.text),
+            "preview": response.text[:300]
+        }
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
