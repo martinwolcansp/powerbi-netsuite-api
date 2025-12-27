@@ -111,7 +111,8 @@ def netsuite_data():
         return {
             "total_inst_caso": data.get("total_inst_caso", []),
             "relevamiento_posventa": data.get("relevamiento_posventa", []),
-            "dias_reales_trabajo": data.get("dias_reales_trabajo", [])
+            "dias_reales_trabajo": data.get("dias_reales_trabajo", []),
+            "facturacion_instalaciones": data.get("facturacion_instalaciones", [])
         }
     except requests.exceptions.RequestException as e:
         return {"error": str(e)}
