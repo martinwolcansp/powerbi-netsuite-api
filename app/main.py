@@ -4,6 +4,7 @@ from app.powerbi import router as powerbi_router
 import os
 import requests
 import time
+import base64
 
 # ==============================
 # 1️⃣ Crear la app FastAPI
@@ -26,20 +27,51 @@ def healthcheck():
     return {"status": "ok"}
 
 # ==============================
-# 4️⃣ Healthcheck NetSuite (prueba rápida)
+# 4️⃣ Función para obtener access_token vía refresh_token (OAuth2 v2)
+# ==============================
+def get_access_token():
+    account_id = os.getenv("NETSUITE_ACCOUNT_ID")
+    client_id = os.getenv("NETSUITE_CLIENT_ID")
+    client_secret = os.getenv("NETSUITE_CLIENT_SECRET")
+    refresh_token = os.getenv("NETSUITE_REFRESH_TOKEN")
+
+    if not all([account_id, client_id, client_secret, refresh_token]):
+        raise RuntimeError("Faltan variables NETSUITE_ACCOUNT_ID, CLIENT_ID, CLIENT_SECRET o REFRESH_TOKEN")
+
+    token_url = f"https://{account_id}.suitetalk.api.netsuite.com/services/rest/auth/oauth2/v2/token"
+
+    basic_auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+
+    headers = {
+        "Authorization": f"Basic {basic_auth}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    payload = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token
+    }
+
+    response = requests.post(token_url, headers=headers, data=payload, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+
+    if "access_token" not in data:
+        raise RuntimeError(f"No se recibió access_token: {data}")
+
+    return data["access_token"]
+
+# ==============================
+# 5️⃣ Healthcheck NetSuite (prueba rápida)
 # ==============================
 @app.get("/health/netsuite")
 def health_netsuite():
+    try:
+        access_token = get_access_token()
+    except Exception as e:
+        return {"error": str(e)}
+
     account_id = os.getenv("NETSUITE_ACCOUNT_ID")
-    access_token = os.getenv("NETSUITE_ACCESS_TOKEN")
-
-    if not account_id or not access_token:
-        return {
-            "error": "Variables de entorno faltantes",
-            "account_id": bool(account_id),
-            "access_token": bool(access_token)
-        }
-
     url = f"https://{account_id}.restlets.api.netsuite.com/app/site/hosting/restlet.nl"
     params = {"script": "2089", "deploy": "1"}
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
@@ -58,16 +90,16 @@ def health_netsuite():
         return {"error": str(e)}
 
 # ==============================
-# 5️⃣ Endpoint principal: tres listas separadas
+# 6️⃣ Endpoint principal: tres listas separadas
 # ==============================
 @app.get("/netsuite/data")
 def netsuite_data():
+    try:
+        access_token = get_access_token()
+    except Exception as e:
+        return {"error": str(e)}
+
     account_id = os.getenv("NETSUITE_ACCOUNT_ID")
-    access_token = os.getenv("NETSUITE_ACCESS_TOKEN")
-
-    if not account_id or not access_token:
-        return {"error": "Variables de entorno faltantes"}
-
     url = f"https://{account_id}.restlets.api.netsuite.com/app/site/hosting/restlet.nl"
     params = {"script": "2089", "deploy": "1"}
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
@@ -76,7 +108,6 @@ def netsuite_data():
         response = requests.get(url, headers=headers, params=params, timeout=120)
         response.raise_for_status()
         data = response.json()  # JSON completo del RESTlet
-        # Retornar solo las tres listas separadas
         return {
             "total_inst_caso": data.get("total_inst_caso", []),
             "relevamiento_posventa": data.get("relevamiento_posventa", []),
