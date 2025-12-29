@@ -137,10 +137,8 @@ def netsuite_data():
         response.raise_for_status()
         data = response.json()  # JSON completo del RESTlet
         return {
-            "total_inst_caso": data.get("total_inst_caso", []),
-            "relevamiento_posventa": data.get("relevamiento_posventa", []),
-            "dias_reales_trabajo": data.get("dias_reales_trabajo", []),
-            "facturacion_instalaciones": data.get("facturacion_instalaciones", [])
+            "clientes_potenciales": data.get("clientes_potenciales", []),
+            "oportunidades_cerradas": data.get("oportunidades_cerradas", [])
         }
     except requests.exceptions.RequestException as e:
         return {"error": str(e)}
