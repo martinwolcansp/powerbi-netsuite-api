@@ -90,9 +90,9 @@ def health_netsuite():
         return {"error": str(e)}
 
 # ==============================
-# 6️⃣ Endpoint Instalaciones: tres listas separadas
+# 6️⃣ Endpoint Instalaciones
 # ==============================
-@app.get("/netsuite/data")
+@app.get("/netsuite/instalaciones")
 def netsuite_data():
     try:
         access_token = get_access_token()
@@ -118,7 +118,33 @@ def netsuite_data():
         return {"error": str(e)}
 
 # ==============================
-# 6️⃣ Endpoint Comercial: tres listas separadas
+# 6️⃣ Endpoint Facturacion Areas Técnicas
+# ==============================
+@app.get("/netsuite/facturacion_areas_tecnicas")
+def netsuite_data():
+    try:
+        access_token = get_access_token()
+    except Exception as e:
+        return {"error": str(e)}
+
+    account_id = os.getenv("NETSUITE_ACCOUNT_ID")
+    url = f"https://{account_id}.restlets.api.netsuite.com/app/site/hosting/restlet.nl"
+    params = {"script": "2092", "deploy": "1"}
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=120)
+        response.raise_for_status()
+        data = response.json()  # JSON completo del RESTlet
+        return {
+            "facturacion_areas_tecnicas": data.get("facturacion_areas_tecnicas", []),
+        }
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+
+
+# ==============================
+# 6️⃣ Endpoint Comercial
 # ==============================
 @app.get("/netsuite/comercial")
 def netsuite_data():
