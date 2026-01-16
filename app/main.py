@@ -6,6 +6,7 @@ import os
 import requests
 import time
 import base64
+import json
 
 # ==============================
 # 1️⃣ Crear la app FastAPI
@@ -62,7 +63,7 @@ def get_access_token():
     return data["access_token"]
 
 # ==============================
-# Helper común para llamar a Restlet
+# 🔧 Helper robusto para llamar Restlets
 # ==============================
 def call_restlet(script_id: str):
     access_token = get_access_token()
@@ -80,16 +81,22 @@ def call_restlet(script_id: str):
 
     # 🔎 LOG CRÍTICO
     print("NETSUITE STATUS:", response.status_code)
-    print("NETSUITE HEADERS:", response.headers)
     print("NETSUITE RAW RESPONSE:")
     print(response.text)
 
     response.raise_for_status()
 
+    raw = response.text.strip()
+
+    # 🔥 Extraer JSON real aunque haya texto previo
     try:
-        return response.json()
-    except ValueError:
-        raise RuntimeError("NetSuite no devolvió JSON válido")
+        json_start = raw.index("{")
+        json_text = raw[json_start:]
+        return json.loads(json_text)
+    except Exception:
+        raise RuntimeError(
+            f"No se pudo parsear JSON desde NetSuite. Inicio del body: {raw[:300]}"
+        )
 
 # ==============================
 # 5️⃣ Endpoint Instalaciones
@@ -104,8 +111,7 @@ def netsuite_instalaciones():
                 "total_inst_caso": data.get("total_inst_caso", []),
                 "relevamiento_posventa": data.get("relevamiento_posventa", []),
                 "dias_reales_trabajo": data.get("dias_reales_trabajo", [])
-            },
-            media_type="application/json"
+            }
         )
 
     except Exception as e:
@@ -125,8 +131,7 @@ def netsuite_facturacion_areas_tecnicas():
         return JSONResponse(
             content={
                 "facturacion_areas_tecnicas": data.get("facturacion_areas_tecnicas", [])
-            },
-            media_type="application/json"
+            }
         )
 
     except Exception as e:
@@ -147,8 +152,7 @@ def netsuite_comercial():
             content={
                 "clientes_potenciales": data.get("clientes_potenciales", []),
                 "oportunidades_cerradas": data.get("oportunidades_cerradas", [])
-            },
-            media_type="application/json"
+            }
         )
 
     except Exception as e:
