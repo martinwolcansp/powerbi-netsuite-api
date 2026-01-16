@@ -77,7 +77,7 @@ def call_restlet(script_id: str):
         "Accept": "application/json"
     }
 
-    response = requests.get(url, headers=headers, params=params, timeout=120)
+    response = requests.get(url, headers=headers, params=params, timeout=30)
 
     # 🔎 LOG CRÍTICO
     print("NETSUITE STATUS:", response.status_code)
