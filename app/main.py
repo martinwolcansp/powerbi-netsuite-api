@@ -114,9 +114,31 @@ def call_restlet(script_id: str):
 
         response.raise_for_status()
 
-        raw = response.text.strip()
-        json_start = raw.index("{")
-        return json.loads(raw[json_start:])
+       raw = response.text.strip()
+
+        # 🔒 FIX INMEDIATO: parseo robusto
+        if not raw:
+            raise HTTPException(
+                status_code=502,
+                detail="Respuesta vacía de NetSuite"
+            )
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Respuesta no JSON de NetSuite: {raw[:200]}"
+            )
+
+        if not isinstance(data, dict):
+            raise HTTPException(
+                status_code=502,
+                detail="Respuesta inesperada de NetSuite (no es un objeto JSON)"
+            )
+
+        return data
+
 
 # ==============================
 # 5️⃣ Endpoint Instalaciones
