@@ -114,9 +114,9 @@ def call_restlet(script_id: str):
 
         response.raise_for_status()
 
-       raw = response.text.strip()
+        raw = response.text.strip()
 
-        # 🔒 FIX INMEDIATO: parseo robusto
+            # 🔒 FIX INMEDIATO: parseo robusto
         if not raw:
             raise HTTPException(
                 status_code=502,
