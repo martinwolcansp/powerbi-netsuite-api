@@ -92,7 +92,7 @@ def get_access_token():
     # ==============================
     # 🔧 Cliente Restlet NetSuite
     # ==============================
-    def call_restlet(script_id: str):
+def call_restlet(script_id: str):
     """
     Llama a un Restlet de NetSuite con:
     - manejo explícito de errores NetSuite
