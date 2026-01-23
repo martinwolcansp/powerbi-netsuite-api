@@ -64,11 +64,11 @@ def get_access_token():
     data = response.json()
 
     access_token = data["access_token"]
-    expires_in = data.get("expires_in", 1800)  # 30 min por defecto
+    expires_in = int(data.get("expires_in", 1800))  # 30 min por defecto
 
-    # 🧠 guardamos token con margen de seguridad
     _token_cache["access_token"] = access_token
     _token_cache["expires_at"] = now + expires_in - 60
+
 
     return access_token
 
