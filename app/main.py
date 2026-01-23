@@ -11,7 +11,7 @@ import json
 # ==============================
 app = FastAPI(
     title="NetSuite → Power BI API",
-    version="1.1.1"
+    version="1.1.2"
 )
 
 app.include_router(powerbi_router)
@@ -31,7 +31,7 @@ _token_cache = {
 def get_access_token():
     now = time.time()
 
-    # ✅ Token válido en cache
+    # Token válido en cache
     if _token_cache["access_token"] and now < _token_cache["expires_at"]:
         return _token_cache["access_token"]
 
@@ -43,7 +43,11 @@ def get_access_token():
     if not all([account_id, client_id, client_secret, refresh_token]):
         raise RuntimeError("Faltan variables de entorno de NetSuite")
 
-    token_url = f"https://{account_id}.suitetalk.api.netsuite.com/services/rest/auth/oauth2/v2/token"
+    token_url = (
+        f"https://{account_id}.suitetalk.api.netsuite.com/"
+        "services/rest/auth/oauth2/v2/token"
+    )
+
     basic_auth = base64.b64encode(
         f"{client_id}:{client_secret}".encode()
     ).decode()
@@ -58,37 +62,59 @@ def get_access_token():
         "refresh_token": refresh_token
     }
 
-    response = requests.post(token_url, headers=headers, data=payload, timeout=30)
-    response.raise_for_status()
+    response = requests.post(
+        token_url,
+        headers=headers,
+        data=payload,
+        timeout=30
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "netsuite_oauth_status": response.status_code,
+                "netsuite_oauth_error": response.text
+            }
+        )
 
     data = response.json()
 
     access_token = data["access_token"]
-    expires_in = int(data.get("expires_in", 1800))  # 30 min por defecto
+    expires_in = int(data.get("expires_in", 1800))  # soporta str o int
 
+    # Cache con margen de seguridad
     _token_cache["access_token"] = access_token
     _token_cache["expires_at"] = now + expires_in - 60
-
 
     return access_token
 
 # ==============================
-# 🔧 Helper Restlet
+# 🔧 Cliente Restlet NetSuite
 # ==============================
 def call_restlet(script_id: str):
     access_token = get_access_token()
     account_id = os.getenv("NETSUITE_ACCOUNT_ID")
 
     url = f"https://{account_id}.restlets.api.netsuite.com/app/site/hosting/restlet.nl"
-    params = {"script": script_id, "deploy": "1"}
+    params = {
+        "script": script_id,
+        "deploy": "1"
+    }
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json"
     }
 
-    response = requests.get(url, headers=headers, params=params, timeout=30)
+    response = requests.get(
+        url,
+        headers=headers,
+        params=params,
+        timeout=30
+    )
 
-    # 🚨 Rate limit NetSuite
+    # Caso especial: Rate limit NetSuite
     if response.status_code == 400:
         try:
             data = response.json()
@@ -100,7 +126,20 @@ def call_restlet(script_id: str):
         except json.JSONDecodeError:
             pass
 
-    response.raise_for_status()
+    # Cualquier otro error NetSuite
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+        except json.JSONDecodeError:
+            error_data = response.text
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "netsuite_status": response.status_code,
+                "netsuite_error": error_data
+            }
+        )
 
     if not response.text:
         raise HTTPException(
@@ -143,7 +182,9 @@ def netsuite_instalaciones():
 def netsuite_facturacion_areas_tecnicas():
     data = call_restlet("2092")
     return {
-        "facturacion_areas_tecnicas": data.get("facturacion_areas_tecnicas", [])
+        "facturacion_areas_tecnicas": data.get(
+            "facturacion_areas_tecnicas", []
+        )
     }
 
 # ==============================
