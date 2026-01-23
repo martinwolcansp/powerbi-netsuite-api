@@ -89,79 +89,99 @@ def get_access_token():
 
     return access_token
 
-# ==============================
-# 🔧 Cliente Restlet NetSuite
-# ==============================
-def call_restlet(script_id: str):
-    access_token = get_access_token()
-    account_id = os.getenv("NETSUITE_ACCOUNT_ID")
+    # ==============================
+    # 🔧 Cliente Restlet NetSuite
+    # ==============================
+    def call_restlet(script_id: str):
+    """
+    Llama a un Restlet de NetSuite con:
+    - manejo explícito de errores NetSuite
+    - 1 retry con backoff leve para fallos transitorios
+    """
 
-    url = f"https://{account_id}.restlets.api.netsuite.com/app/site/hosting/restlet.nl"
-    params = {
-        "script": script_id,
-        "deploy": "1"
-    }
+    def _call_once():
+        access_token = get_access_token()
+        account_id = os.getenv("NETSUITE_ACCOUNT_ID")
 
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/json"
-    }
+        url = f"https://{account_id}.restlets.api.netsuite.com/app/site/hosting/restlet.nl"
+        params = {
+            "script": script_id,
+            "deploy": "1"
+        }
 
-    response = requests.get(
-        url,
-        headers=headers,
-        params=params,
-        timeout=30
-    )
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json"
+        }
 
-    # Caso especial: Rate limit NetSuite
-    if response.status_code == 400:
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=30
+        )
+
+        # Caso especial: rate limit NetSuite
+        if response.status_code == 400:
+            try:
+                data = response.json()
+                if data.get("error", {}).get("code") == "SSS_REQUEST_LIMIT_EXCEEDED":
+                    raise HTTPException(
+                        status_code=429,
+                        detail="NetSuite request limit exceeded"
+                    )
+            except json.JSONDecodeError:
+                pass
+
+        # Cualquier otro error HTTP de NetSuite
+        if response.status_code >= 400:
+            try:
+                error_data = response.json()
+            except json.JSONDecodeError:
+                error_data = response.text
+
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "netsuite_status": response.status_code,
+                    "netsuite_error": error_data
+                }
+            )
+
+        if not response.text:
+            raise HTTPException(
+                status_code=502,
+                detail="Respuesta vacía de NetSuite"
+            )
+
         try:
             data = response.json()
-            if data.get("error", {}).get("code") == "SSS_REQUEST_LIMIT_EXCEEDED":
-                raise HTTPException(
-                    status_code=429,
-                    detail="NetSuite request limit exceeded"
-                )
         except json.JSONDecodeError:
-            pass
+            raise HTTPException(
+                status_code=502,
+                detail=f"Respuesta no JSON de NetSuite: {response.text[:200]}"
+            )
 
-    # Cualquier otro error NetSuite
-    if response.status_code >= 400:
-        try:
-            error_data = response.json()
-        except json.JSONDecodeError:
-            error_data = response.text
+        if not isinstance(data, dict):
+            raise HTTPException(
+                status_code=502,
+                detail="Respuesta inesperada de NetSuite"
+            )
 
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "netsuite_status": response.status_code,
-                "netsuite_error": error_data
-            }
-        )
+        return data
 
-    if not response.text:
-        raise HTTPException(
-            status_code=502,
-            detail="Respuesta vacía de NetSuite"
-        )
-
+    # ==============================
+    # Retry controlado (1 intento extra)
+    # ==============================
     try:
-        data = response.json()
-    except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Respuesta no JSON de NetSuite: {response.text[:200]}"
-        )
+        return _call_once()
+    except HTTPException as e:
+        # Solo reintentamos errores técnicos transitorios
+        if e.status_code == 502:
+            time.sleep(1.5)  # backoff leve
+            return _call_once()
+        raise
 
-    if not isinstance(data, dict):
-        raise HTTPException(
-            status_code=502,
-            detail="Respuesta inesperada de NetSuite"
-        )
-
-    return data
 
 # ==============================
 # 5️⃣ Endpoint Instalaciones
