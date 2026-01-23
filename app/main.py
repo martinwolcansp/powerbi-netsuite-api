@@ -170,6 +170,17 @@ def get_access_token():
 
         return data
 
+        # ==============================
+        # Retry controlado (1 intento extra)
+        # ==============================
+        try:
+            return _call_once()
+        except HTTPException as e:
+            if e.status_code == 502:
+                time.sleep(1.5)  # backoff leve
+                return _call_once()
+            raise
+
     # ==============================
     # Retry controlado (1 intento extra)
     # ==============================
