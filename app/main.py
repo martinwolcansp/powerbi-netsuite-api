@@ -230,17 +230,24 @@ def netsuite_comercial():
         "oportunidades_cerradas": data.get("oportunidades_cerradas", [])
     }
 
-@app.post("/webhook/test")
+# ==============================
+# webhook test
+# ==============================
+@app.api_route("/webhook/test", methods=["POST", "GET"])
 async def webhook_test(request: Request):
+
+    if request.method == "GET":
+        return {
+            "status": "ok",
+            "message": "Webhook test endpoint is alive. Use POST to send data."
+        }
+
     payload = await request.json()
 
     print("WEBHOOK RECEIVED >>>")
     print(payload)
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "ok",
-            "received": payload
-        }
-    )
+    return {
+        "status": "ok",
+        "received": payload
+    }
