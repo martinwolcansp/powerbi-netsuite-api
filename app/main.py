@@ -229,36 +229,17 @@ def netsuite_comercial():
         "oportunidades_cerradas": data.get("oportunidades_cerradas", [])
     }
 
-@app.get("/_test/kv")
-def test_kv():
-    import requests
-    import os
+@app.post("/webhook/test")
+async def webhook_test(request: Request):
+    payload = await request.json()
 
-    url = os.environ["RENDER_KV_URL"]
-    token = os.environ["RENDER_KV_TOKEN"]
+    print("WEBHOOK RECEIVED >>>")
+    print(payload)
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-
-    # escribir
-    r1 = requests.put(
-        f"{url}/test_key",
-        headers=headers,
-        json={"ok": True},
-        timeout=5
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "ok",
+            "received": payload
+        }
     )
-
-    # leer
-    r2 = requests.get(
-        f"{url}/test_key",
-        headers=headers,
-        timeout=5
-    )
-
-    return {
-        "put_status": r1.status_code,
-        "get_status": r2.status_code,
-        "value": r2.json() if r2.ok else None
-    }
