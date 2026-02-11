@@ -128,6 +128,9 @@ def get_access_token():
         "expires_at": time.time() + expires_in - 60
     }
 
+    logger.info(f"Cached token: {cached}")
+    logger.info("Saving token to Redis")
+
     kv_set(redis_key, token_data, ttl_seconds=expires_in)
 
     return access_token
