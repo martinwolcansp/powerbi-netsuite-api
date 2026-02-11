@@ -7,6 +7,7 @@ import time
 import base64
 import json
 import logging
+import time
 
 # =====================================================
 # 🔧 Logging
@@ -199,23 +200,41 @@ def call_restlet(script_id: str):
 # =====================================================
 @app.get("/netsuite/instalaciones")
 def netsuite_instalaciones():
-    cache_key = "cache_instalaciones"
-    cached = kv_get(cache_key)
 
+    cache_key = "cache_instalaciones"
+    lock_key = "lock_instalaciones"
+
+    cached = kv_get(cache_key)
     if cached:
         return cached
 
-    data = call_restlet("2089")
+    # intentar adquirir lock (expira rápido)
+    lock_acquired = redis.set(lock_key, "1", nx=True, ex=5)
 
-    result = {
-        "total_inst_caso": data.get("total_inst_caso", []),
-        "relevamiento_posventa": data.get("relevamiento_posventa", []),
-        "dias_reales_trabajo": data.get("dias_reales_trabajo", [])
-    }
+    if lock_acquired:
+        # este request es el ganador
+        data = call_restlet("2089")
 
-    kv_set(cache_key, result, ttl_seconds=60)
+        result = {
+            "total_inst_caso": data.get("total_inst_caso", []),
+            "relevamiento_posventa": data.get("relevamiento_posventa", []),
+            "dias_reales_trabajo": data.get("dias_reales_trabajo", [])
+        }
 
-    return result
+        kv_set(cache_key, result, ttl_seconds=60)
+        redis.delete(lock_key)
+
+        return result
+
+    else:
+        # otro request ya está llamando a NetSuite
+        time.sleep(0.3)
+        cached = kv_get(cache_key)
+        if cached:
+            return cached
+
+        # fallback extremo (muy raro)
+        return call_restlet("2089")
 
 @app.get("/netsuite/facturacion_areas_tecnicas")
 def netsuite_facturacion_areas_tecnicas():
