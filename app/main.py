@@ -36,6 +36,7 @@ print("======================")
 
 def kv_set(key: str, value: dict, ttl_seconds: int = 3600):
     if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
+        print("KV SET: Missing Redis config")
         return
 
     url = f"{UPSTASH_REDIS_URL}/set"
@@ -50,15 +51,18 @@ def kv_set(key: str, value: dict, ttl_seconds: int = 3600):
         "ex": ttl_seconds
     }
 
+    print("KV SET REQUEST >>>", url, data)
+
     try:
         r = requests.post(url, headers=headers, json=data, timeout=5)
-        print("KV SET STATUS:", r.status_code, r.text)
+        print("KV SET RESPONSE >>>", r.status_code, r.text)
     except Exception as e:
         print("KV SET ERROR:", e)
 
 
 def kv_get(key: str):
     if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
+        print("KV GET: Missing Redis config")
         return None
 
     url = f"{UPSTASH_REDIS_URL}/get/{key}"
@@ -66,9 +70,11 @@ def kv_get(key: str):
         "Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}"
     }
 
+    print("KV GET REQUEST >>>", url)
+
     try:
         r = requests.get(url, headers=headers, timeout=5)
-        print("KV GET STATUS:", r.status_code, r.text)
+        print("KV GET RESPONSE >>>", r.status_code, r.text)
 
         if r.status_code != 200:
             return None
@@ -79,6 +85,7 @@ def kv_get(key: str):
     except Exception as e:
         print("KV GET ERROR:", e)
         return None
+
 
 
 
