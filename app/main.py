@@ -24,68 +24,46 @@ def healthcheck():
 
 
 # =====================================================
-# 🌐 Upstash Redis (KV externo opcional)
+# 🌐 Upstash Redis (cliente oficial)
 # =====================================================
 UPSTASH_REDIS_URL = os.getenv("UPSTASH_REDIS_URL")
 UPSTASH_REDIS_TOKEN = os.getenv("UPSTASH_REDIS_TOKEN")
 
-print("==== REDIS CONFIG ====")
-print("REDIS URL:", UPSTASH_REDIS_URL)
-print("REDIS TOKEN:", UPSTASH_REDIS_TOKEN)
-print("======================")
+redis = None
+
+if UPSTASH_REDIS_URL and UPSTASH_REDIS_TOKEN:
+    redis = Redis(
+        url=UPSTASH_REDIS_URL,
+        token=UPSTASH_REDIS_TOKEN
+    )
+    print("Redis client initialized")
+else:
+    print("Redis not configured")
+
 
 def kv_set(key: str, value: dict, ttl_seconds: int = 3600):
-    if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
-        print("KV SET: Missing Redis config")
+    if not redis:
+        print("Redis not available")
         return
 
-    url = f"{UPSTASH_REDIS_URL}/set"
-    headers = {
-        "Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-    data = {
-        "key": key,
-        "value": json.dumps(value),
-        "ex": ttl_seconds
-    }
-
-    print("KV SET REQUEST >>>", url, data)
-
     try:
-        r = requests.post(url, headers=headers, json=data, timeout=5)
-        print("KV SET RESPONSE >>>", r.status_code, r.text)
+        redis.set(key, json.dumps(value), ex=ttl_seconds)
+        print("KV SET OK")
     except Exception as e:
         print("KV SET ERROR:", e)
 
 
 def kv_get(key: str):
-    if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
-        print("KV GET: Missing Redis config")
+    if not redis:
+        print("Redis not available")
         return None
 
-    url = f"{UPSTASH_REDIS_URL}/get/{key}"
-    headers = {
-        "Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}"
-    }
-
-    print("KV GET REQUEST >>>", url)
-
     try:
-        r = requests.get(url, headers=headers, timeout=5)
-        print("KV GET RESPONSE >>>", r.status_code, r.text)
-
-        if r.status_code != 200:
-            return None
-
-        result = r.json().get("result")
+        result = redis.get(key)
         return json.loads(result) if result else None
-
     except Exception as e:
         print("KV GET ERROR:", e)
         return None
-
 
 
 
