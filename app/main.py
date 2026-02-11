@@ -240,19 +240,24 @@ def netsuite_instalaciones():
             print("Lock released")
 
     else:
-        # 3️⃣ Otro request ya está llamando a NetSuite
-        print("Lock not acquired, waiting for cache...")
+    print("Lock not acquired, waiting for cache...")
 
-        time.sleep(0.3)  # Esperar 300ms
+    max_wait = 5  # segundos
+    waited = 0
+    interval = 0.2
+
+    while waited < max_wait:
+        time.sleep(interval)
+        waited += interval
 
         cached = kv_get(cache_key)
         if cached:
             print("Returning instalaciones from cache after wait")
             return cached
 
-        # Fallback muy raro (si algo falló)
-        print("Fallback: calling NetSuite directly")
-        return call_restlet("2089")
+    # Si después de esperar no apareció cache
+    print("Timeout waiting for cache, calling NetSuite")
+    return call_restlet("2089")
 
 
 @app.get("/netsuite/facturacion_areas_tecnicas")
