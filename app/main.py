@@ -14,6 +14,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("netsuite-api")
 
+netsuite_call_count = 0
+
 # =====================================================
 # 🚀 FastAPI App
 # =====================================================
@@ -142,6 +144,8 @@ def get_access_token():
 def call_restlet(script_id: str):
 
     def _call_once():
+        print(f"Calling NetSuite script {script_id} at {time.time()}")
+
         access_token = get_access_token()
         account_id = os.getenv("NETSUITE_ACCOUNT_ID")
 
@@ -183,9 +187,11 @@ def call_restlet(script_id: str):
         return _call_once()
     except HTTPException as e:
         if e.status_code == 502:
+            print("Retrying NetSuite call...")
             time.sleep(1.5)
             return _call_once()
         raise
+
 
 
 # =====================================================
