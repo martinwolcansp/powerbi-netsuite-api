@@ -29,6 +29,9 @@ def healthcheck():
 UPSTASH_REDIS_URL = os.getenv("UPSTASH_REDIS_URL")
 UPSTASH_REDIS_TOKEN = os.getenv("UPSTASH_REDIS_TOKEN")
 
+print("REDIS URL:", UPSTASH_REDIS_URL)
+print("REDIS TOKEN:", UPSTASH_REDIS_TOKEN)
+
 
 def kv_set(key: str, value: dict, ttl_seconds: int = 3600):
     if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
