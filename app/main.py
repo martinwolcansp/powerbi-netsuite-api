@@ -7,32 +7,80 @@ import time
 import base64
 import json
 
-# ==============================
-# 1️⃣ Crear la app FastAPI
-# ==============================
+# =====================================================
+# 🚀 FastAPI App
+# =====================================================
 app = FastAPI(
     title="NetSuite → Power BI API",
-    version="1.1.2"
+    version="1.2.0"
 )
 
 app.include_router(powerbi_router)
+
 
 @app.get("/")
 def healthcheck():
     return {"status": "ok"}
 
-# ==============================
-# 🔐 OAuth cache en memoria
-# ==============================
+
+# =====================================================
+# 🌐 Upstash Redis (KV externo opcional)
+# =====================================================
+UPSTASH_REDIS_URL = os.getenv("UPSTASH_REDIS_URL")
+UPSTASH_REDIS_TOKEN = os.getenv("UPSTASH_REDIS_TOKEN")
+
+
+def kv_set(key: str, value: dict, ttl_seconds: int = 3600):
+    if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
+        return
+
+    url = f"{UPSTASH_REDIS_URL}/set/{key}"
+    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}"}
+    data = {
+        "value": json.dumps(value),
+        "ttl": ttl_seconds
+    }
+
+    try:
+        requests.post(url, headers=headers, json=data, timeout=5)
+    except Exception as e:
+        print("KV SET ERROR:", e)
+
+
+def kv_get(key: str):
+    if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
+        return None
+
+    url = f"{UPSTASH_REDIS_URL}/get/{key}"
+    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}"}
+
+    try:
+        r = requests.get(url, headers=headers, timeout=5)
+
+        if r.status_code != 200:
+            return None
+
+        result = r.json().get("result")
+        return json.loads(result) if result else None
+
+    except Exception as e:
+        print("KV GET ERROR:", e)
+        return None
+
+
+# =====================================================
+# 🔐 OAuth Cache en memoria
+# =====================================================
 _token_cache = {
     "access_token": None,
     "expires_at": 0
 }
 
+
 def get_access_token():
     now = time.time()
 
-    # Token válido en cache
+    # Token válido en memoria
     if _token_cache["access_token"] and now < _token_cache["expires_at"]:
         return _token_cache["access_token"]
 
@@ -82,33 +130,25 @@ def get_access_token():
     data = response.json()
 
     access_token = data["access_token"]
-    expires_in = int(data.get("expires_in", 1800))  # soporta str o int
+    expires_in = int(data.get("expires_in", 1800))
 
-    # Cache con margen de seguridad
     _token_cache["access_token"] = access_token
     _token_cache["expires_at"] = now + expires_in - 60
 
     return access_token
 
-    # ==============================
-    # 🔧 Cliente Restlet NetSuite
-    # ==============================
+
+# =====================================================
+# 🔧 Cliente Restlet NetSuite
+# =====================================================
 def call_restlet(script_id: str):
-    """
-    Llama a un Restlet de NetSuite con:
-    - manejo explícito de errores NetSuite
-    - 1 retry con backoff leve para fallos transitorios
-    """
 
     def _call_once():
         access_token = get_access_token()
         account_id = os.getenv("NETSUITE_ACCOUNT_ID")
 
         url = f"https://{account_id}.restlets.api.netsuite.com/app/site/hosting/restlet.nl"
-        params = {
-            "script": script_id,
-            "deploy": "1"
-        }
+        params = {"script": script_id, "deploy": "1"}
 
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -122,19 +162,6 @@ def call_restlet(script_id: str):
             timeout=30
         )
 
-        # Caso especial: rate limit NetSuite
-        if response.status_code == 400:
-            try:
-                data = response.json()
-                if data.get("error", {}).get("code") == "SSS_REQUEST_LIMIT_EXCEEDED":
-                    raise HTTPException(
-                        status_code=429,
-                        detail="NetSuite request limit exceeded"
-                    )
-            except json.JSONDecodeError:
-                pass
-
-        # Cualquier otro error HTTP de NetSuite
         if response.status_code >= 400:
             try:
                 error_data = response.json()
@@ -149,55 +176,27 @@ def call_restlet(script_id: str):
                 }
             )
 
-        if not response.text:
-            raise HTTPException(
-                status_code=502,
-                detail="Respuesta vacía de NetSuite"
-            )
-
         try:
-            data = response.json()
+            return response.json()
         except json.JSONDecodeError:
             raise HTTPException(
                 status_code=502,
-                detail=f"Respuesta no JSON de NetSuite: {response.text[:200]}"
+                detail="Respuesta no JSON de NetSuite"
             )
 
-        if not isinstance(data, dict):
-            raise HTTPException(
-                status_code=502,
-                detail="Respuesta inesperada de NetSuite"
-            )
-
-        return data
-
-        # ==============================
-        # Retry controlado (1 intento extra)
-        # ==============================
-        try:
-            return _call_once()
-        except HTTPException as e:
-            if e.status_code == 502:
-                time.sleep(1.5)  # backoff leve
-                return _call_once()
-            raise
-
-    # ==============================
-    # Retry controlado (1 intento extra)
-    # ==============================
+    # Retry controlado
     try:
         return _call_once()
     except HTTPException as e:
-        # Solo reintentamos errores técnicos transitorios
         if e.status_code == 502:
-            time.sleep(1.5)  # backoff leve
+            time.sleep(1.5)
             return _call_once()
         raise
 
 
-# ==============================
-# 5️⃣ Endpoint Instalaciones
-# ==============================
+# =====================================================
+# 📊 Endpoints NetSuite
+# =====================================================
 @app.get("/netsuite/instalaciones")
 def netsuite_instalaciones():
     data = call_restlet("2089")
@@ -207,21 +206,15 @@ def netsuite_instalaciones():
         "dias_reales_trabajo": data.get("dias_reales_trabajo", [])
     }
 
-# ==============================
-# 6️⃣ Facturación Áreas Técnicas
-# ==============================
+
 @app.get("/netsuite/facturacion_areas_tecnicas")
 def netsuite_facturacion_areas_tecnicas():
     data = call_restlet("2092")
     return {
-        "facturacion_areas_tecnicas": data.get(
-            "facturacion_areas_tecnicas", []
-        )
+        "facturacion_areas_tecnicas": data.get("facturacion_areas_tecnicas", [])
     }
 
-# ==============================
-# 7️⃣ Comercial
-# ==============================
+
 @app.get("/netsuite/comercial")
 def netsuite_comercial():
     data = call_restlet("2091")
@@ -230,22 +223,26 @@ def netsuite_comercial():
         "oportunidades_cerradas": data.get("oportunidades_cerradas", [])
     }
 
-# ==============================
-# webhook test
-# ==============================
+
+# =====================================================
+# 🔔 Webhook Test con Redis
+# =====================================================
 @app.api_route("/webhook/test", methods=["POST", "GET"])
 async def webhook_test(request: Request):
 
     if request.method == "GET":
+        stored = kv_get("last_webhook_payload")
         return {
             "status": "ok",
-            "message": "Webhook test endpoint is alive. Use POST to send data."
+            "stored_payload": stored
         }
 
     payload = await request.json()
 
     print("WEBHOOK RECEIVED >>>")
     print(payload)
+
+    kv_set("last_webhook_payload", payload)
 
     return {
         "status": "ok",
