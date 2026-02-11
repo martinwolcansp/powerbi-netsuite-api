@@ -218,10 +218,13 @@ def netsuite_instalaciones():
     lock_acquired = redis.set(lock_key, "1", nx=True, ex=5)
 
     if lock_acquired:
-        print("Lock acquired, calling NetSuite")
+    print("Lock acquired, calling NetSuite")
 
-        try:
-            data = call_restlet("2089")
+    try:
+        start = time.time()   # 👈 AGREGAR ESTO
+        data = call_restlet("2089")
+        print(f"NetSuite call duration: {time.time() - start} seconds")  # 👈 AGREGAR ESTO
+
 
             result = {
                 "total_inst_caso": data.get("total_inst_caso", []),
@@ -231,6 +234,7 @@ def netsuite_instalaciones():
 
             # Guardar cache por 60 segundos
             kv_set(cache_key, result, ttl_seconds=60)
+            print("Cache saved for instalaciones")
 
             return result
 
