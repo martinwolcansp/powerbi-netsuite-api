@@ -198,43 +198,62 @@ def call_restlet(script_id: str):
 # =====================================================
 # 📊 Endpoints NetSuite
 # =====================================================
+import time
+
 @app.get("/netsuite/instalaciones")
 def netsuite_instalaciones():
 
     cache_key = "cache_instalaciones"
     lock_key = "lock_instalaciones"
 
+    # 1️⃣ Intentar leer cache
     cached = kv_get(cache_key)
     if cached:
+        print("Returning instalaciones from cache")
         return cached
 
-    # intentar adquirir lock (expira rápido)
+    print("Cache miss for instalaciones")
+
+    # 2️⃣ Intentar adquirir lock (solo uno puede)
     lock_acquired = redis.set(lock_key, "1", nx=True, ex=5)
 
     if lock_acquired:
-        # este request es el ganador
-        data = call_restlet("2089")
+        print("Lock acquired, calling NetSuite")
 
-        result = {
-            "total_inst_caso": data.get("total_inst_caso", []),
-            "relevamiento_posventa": data.get("relevamiento_posventa", []),
-            "dias_reales_trabajo": data.get("dias_reales_trabajo", [])
-        }
+        try:
+            data = call_restlet("2089")
 
-        kv_set(cache_key, result, ttl_seconds=60)
-        redis.delete(lock_key)
+            result = {
+                "total_inst_caso": data.get("total_inst_caso", []),
+                "relevamiento_posventa": data.get("relevamiento_posventa", []),
+                "dias_reales_trabajo": data.get("dias_reales_trabajo", [])
+            }
 
-        return result
+            # Guardar cache por 60 segundos
+            kv_set(cache_key, result, ttl_seconds=60)
+
+            return result
+
+        finally:
+            # Liberar lock (por seguridad)
+            redis.delete(lock_key)
+            print("Lock released")
 
     else:
-        # otro request ya está llamando a NetSuite
-        time.sleep(0.3)
+        # 3️⃣ Otro request ya está llamando a NetSuite
+        print("Lock not acquired, waiting for cache...")
+
+        time.sleep(0.3)  # Esperar 300ms
+
         cached = kv_get(cache_key)
         if cached:
+            print("Returning instalaciones from cache after wait")
             return cached
 
-        # fallback extremo (muy raro)
+        # Fallback muy raro (si algo falló)
+        print("Fallback: calling NetSuite directly")
         return call_restlet("2089")
+
 
 @app.get("/netsuite/facturacion_areas_tecnicas")
 def netsuite_facturacion_areas_tecnicas():
