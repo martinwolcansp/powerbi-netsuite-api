@@ -156,14 +156,14 @@ def call_restlet(script_id: str):
         response = requests.get(url, headers=headers, params=params, timeout=30)
 
         if response.status_code >= 400:
+            print("NetSuite error:", response.status_code, response.text)
+
             try:
                 error_data = response.json()
             except json.JSONDecodeError:
                 error_data = response.text
 
-            print("NetSuite error:", response.status_code, response.text)
-
-           raise HTTPException(
+            raise HTTPException(
                 status_code=502,
                 detail={
                     "netsuite_status": response.status_code,
