@@ -193,13 +193,23 @@ def call_restlet(script_id: str):
 # =====================================================
 @app.get("/netsuite/instalaciones")
 def netsuite_instalaciones():
+    cache_key = "cache_instalaciones"
+    cached = kv_get(cache_key)
+
+    if cached:
+        return cached
+
     data = call_restlet("2089")
-    return {
+
+    result = {
         "total_inst_caso": data.get("total_inst_caso", []),
         "relevamiento_posventa": data.get("relevamiento_posventa", []),
         "dias_reales_trabajo": data.get("dias_reales_trabajo", [])
     }
 
+    kv_set(cache_key, result, ttl_seconds=60)
+
+    return result
 
 @app.get("/netsuite/facturacion_areas_tecnicas")
 def netsuite_facturacion_areas_tecnicas():
