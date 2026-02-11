@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
 from upstash_redis import Redis
 from app.powerbi import router as powerbi_router
 import os
@@ -7,13 +6,20 @@ import requests
 import time
 import base64
 import json
+import logging
+
+# =====================================================
+# 🔧 Logging
+# =====================================================
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("netsuite-api")
 
 # =====================================================
 # 🚀 FastAPI App
 # =====================================================
 app = FastAPI(
     title="NetSuite → Power BI API",
-    version="1.2.0"
+    version="2.0.0"
 )
 
 app.include_router(powerbi_router)
@@ -25,7 +31,7 @@ def healthcheck():
 
 
 # =====================================================
-# 🌐 Upstash Redis (cliente oficial)
+# 🌐 Upstash Redis
 # =====================================================
 UPSTASH_REDIS_URL = os.getenv("UPSTASH_REDIS_URL")
 UPSTASH_REDIS_TOKEN = os.getenv("UPSTASH_REDIS_TOKEN")
@@ -33,57 +39,47 @@ UPSTASH_REDIS_TOKEN = os.getenv("UPSTASH_REDIS_TOKEN")
 redis = None
 
 if UPSTASH_REDIS_URL and UPSTASH_REDIS_TOKEN:
-    redis = Redis(
-        url=UPSTASH_REDIS_URL,
-        token=UPSTASH_REDIS_TOKEN
-    )
-    print("Redis client initialized")
+    redis = Redis(url=UPSTASH_REDIS_URL, token=UPSTASH_REDIS_TOKEN)
+    logger.info("Redis initialized")
 else:
-    print("Redis not configured")
+    logger.warning("Redis not configured")
 
 
-def kv_set(key: str, value: dict, ttl_seconds: int = 3600):
+def kv_set(key: str, value: dict, ttl_seconds: int = None):
     if not redis:
-        print("Redis not available")
         return
-
     try:
-        redis.set(key, json.dumps(value), ex=ttl_seconds)
-        print("KV SET OK")
+        if ttl_seconds:
+            redis.set(key, json.dumps(value), ex=ttl_seconds)
+        else:
+            redis.set(key, json.dumps(value))
     except Exception as e:
-        print("KV SET ERROR:", e)
+        logger.error(f"KV SET ERROR: {e}")
 
 
 def kv_get(key: str):
     if not redis:
-        print("Redis not available")
         return None
-
     try:
         result = redis.get(key)
         return json.loads(result) if result else None
     except Exception as e:
-        print("KV GET ERROR:", e)
+        logger.error(f"KV GET ERROR: {e}")
         return None
 
 
-
 # =====================================================
-# 🔐 OAuth Cache en memoria
+# 🔐 OAuth Cache (Ahora en Redis)
 # =====================================================
-_token_cache = {
-    "access_token": None,
-    "expires_at": 0
-}
-
-
 def get_access_token():
-    now = time.time()
+    redis_key = "netsuite_oauth_token"
 
-    # Token válido en memoria
-    if _token_cache["access_token"] and now < _token_cache["expires_at"]:
-        return _token_cache["access_token"]
+    # 1️⃣ Intentar desde Redis
+    cached = kv_get(redis_key)
+    if cached and cached.get("access_token") and cached.get("expires_at") > time.time():
+        return cached["access_token"]
 
+    # 2️⃣ Si no existe o expiró → renovar
     account_id = os.getenv("NETSUITE_ACCOUNT_ID")
     client_id = os.getenv("NETSUITE_CLIENT_ID")
     client_secret = os.getenv("NETSUITE_CLIENT_SECRET")
@@ -111,12 +107,7 @@ def get_access_token():
         "refresh_token": refresh_token
     }
 
-    response = requests.post(
-        token_url,
-        headers=headers,
-        data=payload,
-        timeout=30
-    )
+    response = requests.post(token_url, headers=headers, data=payload, timeout=30)
 
     if response.status_code >= 400:
         raise HTTPException(
@@ -132,14 +123,18 @@ def get_access_token():
     access_token = data["access_token"]
     expires_in = int(data.get("expires_in", 1800))
 
-    _token_cache["access_token"] = access_token
-    _token_cache["expires_at"] = now + expires_in - 60
+    token_data = {
+        "access_token": access_token,
+        "expires_at": time.time() + expires_in - 60
+    }
+
+    kv_set(redis_key, token_data, ttl_seconds=expires_in)
 
     return access_token
 
 
 # =====================================================
-# 🔧 Cliente Restlet NetSuite
+# 🔧 Cliente Restlet
 # =====================================================
 def call_restlet(script_id: str):
 
@@ -155,12 +150,7 @@ def call_restlet(script_id: str):
             "Accept": "application/json"
         }
 
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=30
-        )
+        response = requests.get(url, headers=headers, params=params, timeout=30)
 
         if response.status_code >= 400:
             try:
@@ -184,7 +174,6 @@ def call_restlet(script_id: str):
                 detail="Respuesta no JSON de NetSuite"
             )
 
-    # Retry controlado
     try:
         return _call_once()
     except HTTPException as e:
@@ -225,38 +214,40 @@ def netsuite_comercial():
 
 
 # =====================================================
-# 🔔 Webhook Test con Redis + Self-Test
+# 🔔 Webhook protegido
 # =====================================================
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 
-@app.api_route("/webhook/test", methods=["POST", "GET"])
+@app.post("/webhook/test")
 async def webhook_test(request: Request):
-    query = request.query_params
 
-    # GET con test
-    if request.method == "GET":
-        if query.get("test") == "true":
-            # payload de prueba
-            test_payload = {"event": "upstash_funciona_test"}
-            kv_set("last_webhook_payload", test_payload)
-            stored = kv_get("last_webhook_payload")
-            return {
-                "status": "ok",
-                "self_test": {
-                    "payload_sent": test_payload,
-                    "payload_stored": stored,
-                    "passed": stored == test_payload
-                }
-            }
+    if WEBHOOK_SECRET:
+        if request.headers.get("x-webhook-secret") != WEBHOOK_SECRET:
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
-        # GET normal
-        stored = kv_get("last_webhook_payload")
-        return {
-            "status": "ok",
-            "stored_payload": stored
-        }
-
-    # POST normal
     payload = await request.json()
     kv_set("last_webhook_payload", payload)
+
     return {"status": "ok", "received": payload}
+
+
+@app.get("/webhook/test")
+def webhook_get():
+    stored = kv_get("last_webhook_payload")
+    return {"status": "ok", "stored_payload": stored}
+
+
+# =====================================================
+# 🩺 Redis Healthcheck
+# =====================================================
+@app.get("/health/redis")
+def redis_health():
+    if not redis:
+        return {"redis": "not_configured"}
+
+    try:
+        redis.set("healthcheck", "ok", ex=10)
+        return {"redis": "ok"}
+    except Exception:
+        return {"redis": "error"}
