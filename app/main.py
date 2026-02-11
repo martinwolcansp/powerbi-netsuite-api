@@ -38,15 +38,21 @@ def kv_set(key: str, value: dict, ttl_seconds: int = 3600):
     if not UPSTASH_REDIS_URL or not UPSTASH_REDIS_TOKEN:
         return
 
-    url = f"{UPSTASH_REDIS_URL}/set/{key}"
-    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}"}
+    url = f"{UPSTASH_REDIS_URL}/set"
+    headers = {
+        "Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
     data = {
+        "key": key,
         "value": json.dumps(value),
-        "ttl": ttl_seconds
+        "ex": ttl_seconds
     }
 
     try:
-        requests.post(url, headers=headers, json=data, timeout=5)
+        r = requests.post(url, headers=headers, json=data, timeout=5)
+        print("KV SET STATUS:", r.status_code, r.text)
     except Exception as e:
         print("KV SET ERROR:", e)
 
@@ -56,10 +62,13 @@ def kv_get(key: str):
         return None
 
     url = f"{UPSTASH_REDIS_URL}/get/{key}"
-    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}"}
+    headers = {
+        "Authorization": f"Bearer {UPSTASH_REDIS_TOKEN}"
+    }
 
     try:
         r = requests.get(url, headers=headers, timeout=5)
+        print("KV GET STATUS:", r.status_code, r.text)
 
         if r.status_code != 200:
             return None
@@ -70,6 +79,7 @@ def kv_get(key: str):
     except Exception as e:
         print("KV GET ERROR:", e)
         return None
+
 
 
 # =====================================================
