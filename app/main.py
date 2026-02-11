@@ -230,29 +230,25 @@ def netsuite_comercial():
 
 @app.api_route("/webhook/test", methods=["POST", "GET"])
 async def webhook_test(request: Request):
-    """
-    POST: recibe un payload JSON y lo guarda en Redis.
-    GET : devuelve el último payload guardado en Redis.
-          Si se pasa ?test=true, realiza un test de Redis.
-    """
     query = request.query_params
+
+    # GET con test
     if request.method == "GET":
-        # Self-test si viene test=true
         if query.get("test") == "true":
+            # payload de prueba
             test_payload = {"event": "upstash_funciona_test"}
             kv_set("last_webhook_payload", test_payload)
             stored = kv_get("last_webhook_payload")
-            test_result = stored == test_payload
             return {
                 "status": "ok",
                 "self_test": {
                     "payload_sent": test_payload,
                     "payload_stored": stored,
-                    "passed": test_result
+                    "passed": stored == test_payload
                 }
             }
 
-        # GET normal: devuelve último payload
+        # GET normal
         stored = kv_get("last_webhook_payload")
         return {
             "status": "ok",
@@ -260,20 +256,6 @@ async def webhook_test(request: Request):
         }
 
     # POST normal
-    try:
-        payload = await request.json()
-    except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": f"Invalid JSON: {e}"}
-        )
-
-    print("WEBHOOK RECEIVED >>>")
-    print(payload)
-
+    payload = await request.json()
     kv_set("last_webhook_payload", payload)
-
-    return {
-        "status": "ok",
-        "received": payload
-    }
+    return {"status": "ok", "received": payload}
