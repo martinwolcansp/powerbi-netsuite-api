@@ -235,29 +235,29 @@ def netsuite_instalaciones():
             return result
 
         finally:
-            # Liberar lock (por seguridad)
             redis.delete(lock_key)
             print("Lock released")
 
     else:
-    print("Lock not acquired, waiting for cache...")
+        print("Lock not acquired, waiting for cache...")
 
-    max_wait = 5  # segundos
-    waited = 0
-    interval = 0.2
+        max_wait = 5  # segundos
+        waited = 0
+        interval = 0.2
 
-    while waited < max_wait:
-        time.sleep(interval)
-        waited += interval
+        while waited < max_wait:
+            time.sleep(interval)
+            waited += interval
 
-        cached = kv_get(cache_key)
-        if cached:
-            print("Returning instalaciones from cache after wait")
-            return cached
+            cached = kv_get(cache_key)
+            if cached:
+                print("Returning instalaciones from cache after wait")
+                return cached
 
-    # Si después de esperar no apareció cache
-    print("Timeout waiting for cache, calling NetSuite")
-    return call_restlet("2089")
+        # Si después de esperar no apareció cache
+        print("Timeout waiting for cache, calling NetSuite")
+        return call_restlet("2089")
+
 
 
 @app.get("/netsuite/facturacion_areas_tecnicas")
