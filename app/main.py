@@ -161,7 +161,9 @@ def call_restlet(script_id: str):
             except json.JSONDecodeError:
                 error_data = response.text
 
-            raise HTTPException(
+            print("NetSuite error:", response.status_code, response.text)
+
+           raise HTTPException(
                 status_code=502,
                 detail={
                     "netsuite_status": response.status_code,
