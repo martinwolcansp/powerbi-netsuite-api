@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from upstash_redis import Redis
 from app.powerbi import router as powerbi_router
 import os
 import requests
