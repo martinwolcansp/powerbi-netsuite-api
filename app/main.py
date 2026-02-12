@@ -214,17 +214,16 @@ def netsuite_instalaciones():
 
     print("Cache miss for instalaciones")
 
-    # 2️⃣ Intentar adquirir lock (solo uno puede)
-    lock_acquired = redis.set(lock_key, "1", nx=True, ex=5)
+    # 2️⃣ Intentar adquirir lock
+    lock_acquired = redis.set(lock_key, "1", nx=True, ex=30)
 
     if lock_acquired:
-    print("Lock acquired, calling NetSuite")
+        print("Lock acquired, calling NetSuite")
 
-    try:
-        start = time.time()   # 👈 AGREGAR ESTO
-        data = call_restlet("2089")
-        print(f"NetSuite call duration: {time.time() - start} seconds")  # 👈 AGREGAR ESTO
-
+        try:
+            start = time.time()
+            data = call_restlet("2089")
+            print(f"NetSuite call duration: {time.time() - start} seconds")
 
             result = {
                 "total_inst_caso": data.get("total_inst_caso", []),
@@ -243,24 +242,22 @@ def netsuite_instalaciones():
             print("Lock released")
 
     else:
-        print("Lock not acquired, waiting for cache...")
+        print("Lock not acquired, waiting until lock is released...")
 
-        max_wait = 5  # segundos
-        waited = 0
-        interval = 0.2
+        # Esperar mientras exista el lock
+        while redis.exists(lock_key):
+            time.sleep(0.2)
 
-        while waited < max_wait:
-            time.sleep(interval)
-            waited += interval
+        # Cuando desaparece el lock debería existir cache
+        cached = kv_get(cache_key)
+        if cached:
+            print("Returning instalaciones from cache after lock release")
+            return cached
 
-            cached = kv_get(cache_key)
-            if cached:
-                print("Returning instalaciones from cache after wait")
-                return cached
-
-        # Si después de esperar no apareció cache
-        print("Timeout waiting for cache, calling NetSuite")
+        # Caso extremo (muy raro)
+        print("Lock released but no cache found, calling NetSuite")
         return call_restlet("2089")
+
 
 
 
