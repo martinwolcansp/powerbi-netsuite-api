@@ -227,8 +227,8 @@ def netsuite_instalaciones():
 
             result = {
                 "total_inst_caso": data.get("total_inst_caso", []),
-                "relevamiento_posventa": data.get("relevamiento_posventa", []),
-                "dias_reales_trabajo": data.get("dias_reales_trabajo", [])
+                "lista_art_inst": data.get("lista_art_inst", []),
+                "total_art_caso": data.get("total_art_caso", [])
             }
 
             # Guardar cache por 60 segundos
