@@ -1,22 +1,16 @@
 from fastapi import APIRouter, Header, HTTPException
 from app.config import POWERBI_API_KEY
-from app.netsuite import call_restlet
+from app.netsuite_client import call_restlet
 
-router = APIRouter()
+router = APIRouter(prefix="/powerbi")
 
-
-@router.get("/powerbi/instalaciones")
+@router.get("/instalaciones")
 def instalaciones(x_api_key: str = Header(...)):
     if x_api_key != POWERBI_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
-    data = call_restlet(
-        script_id=2089,
-        deploy_id=1,
-        method="GET"
-    )
+    data = call_restlet("2089")
 
-    # Normalización mínima para Power BI
     return {
         "rows": data
     }
