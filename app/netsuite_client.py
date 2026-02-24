@@ -1,3 +1,4 @@
+#netsuite_client.py
 import time
 import base64
 import requests
@@ -10,6 +11,8 @@ from app.config import (
     NETSUITE_REFRESH_TOKEN,
 )
 from app.redis_client import redis, kv_get, kv_set
+from app.services.netsuite_queue import netsuite_queue
+import asyncio
 
 logger = logging.getLogger("netsuite")
 
@@ -140,7 +143,10 @@ def get_access_token():
 # Restlet Caller
 # ==========================================================
 
-def call_restlet(script_id: str, deploy_id: str = "1"):
+def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
+    """
+    Llamada síncrona a NetSuite, idéntica a la función anterior call_restlet.
+    """
     url = (
         f"https://{NETSUITE_ACCOUNT_ID}"
         ".restlets.api.netsuite.com/app/site/hosting/restlet.nl"
@@ -171,7 +177,7 @@ def call_restlet(script_id: str, deploy_id: str = "1"):
 
         duration = round(time.time() - start, 2)
 
-        logger.info(
+        logger.debug(
             f"NetSuite call script={script_id} "
             f"status={response.status_code} "
             f"duration={duration}s "
@@ -199,15 +205,34 @@ def call_restlet(script_id: str, deploy_id: str = "1"):
 
 
 # ==========================================================
+# Async wrapper para usar cola
+# ==========================================================
+
+
+async def call_restlet_async(script_id: str, deploy_id: str = "1"):
+    """
+    Wrapper async que ejecuta la request a NetSuite a través de la cola
+    """
+    async def job():
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _call_restlet_sync, script_id, deploy_id)
+
+    return await netsuite_queue.run(job_name=f"script_{script_id}", coro=job)
+
+
+# ==========================================================
 # Distributed Cache + Lock (Single Flight)
 # ==========================================================
 
 def call_restlet_with_cache(script_id: str, ttl: int = 300):
+    """
+    Mantiene lógica de cache Redis existente, llama a call_restlet_async en lugar de sync
+    """
+    import asyncio
 
     cache_key = f"cache:{script_id}"
     lock_key = f"lock:{script_id}"
 
-    # 1️⃣ Intentar cache
     cached = kv_get(cache_key)
     if cached:
         logger.info(f"Cache hit for script {script_id}")
@@ -215,35 +240,30 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300):
 
     logger.info(f"Cache miss for script {script_id}")
 
-    # Si no hay Redis → fallback directo
     if not redis:
         logger.warning("Redis not available, skipping distributed cache")
-        return call_restlet(script_id)
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(call_restlet_async(script_id))
 
-    # 2️⃣ Intentar lock distribuido
     lock_acquired = redis.set(lock_key, "1", nx=True, ex=120)
-
     if lock_acquired:
         logger.info(f"Lock acquired for script {script_id}")
-
         try:
-            data = call_restlet(script_id)
+            loop = asyncio.get_event_loop()
+            data = loop.run_until_complete(call_restlet_async(script_id))
             kv_set(cache_key, data, ttl_seconds=ttl)
             logger.info(f"Cache saved for script {script_id}")
             return data
-
         finally:
             redis.delete(lock_key)
             logger.info(f"Lock released for script {script_id}")
 
-    # 3️⃣ Si otro proceso tiene el lock → esperar cache con backoff
     logger.info("Another request is active. Waiting with backoff...")
-
     cached = _wait_for_cache_with_backoff(cache_key, timeout=120)
-
     if cached:
         logger.info(f"Cache available after wait for script {script_id}")
         return cached
 
     logger.warning("Timeout waiting for cache. Calling directly.")
-    return call_restlet(script_id)
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(call_restlet_async(script_id))
