@@ -5,7 +5,7 @@ router = APIRouter(prefix="/netsuite")
 
 @router.get("/instalaciones")
 def instalaciones():
-    data = call_restlet_with_cache("2089", ttl=60)
+    return call_restlet_with_cache("2089", ttl=300)
     return {
         "total_inst_caso": data.get("total_inst_caso", []),
         "lista_art_inst": data.get("lista_art_inst", []),
