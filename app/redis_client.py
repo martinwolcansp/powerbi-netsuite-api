@@ -1,3 +1,4 @@
+#redis_client.py
 import json
 import logging
 from typing import Optional, Dict, Any
@@ -9,7 +10,11 @@ logger = logging.getLogger("redis")
 
 redis: Optional[Redis] = None
 
+
+# ==========================================================
 # Inicialización segura
+# ==========================================================
+
 if UPSTASH_REDIS_URL and UPSTASH_REDIS_TOKEN:
     try:
         redis = Redis(
@@ -24,19 +29,19 @@ else:
     logger.warning("Redis not configured (missing URL or TOKEN)")
 
 
-# ==============================
+# ==========================================================
 # SET
-# ==============================
-def kv_set(key: str, value: Dict[str, Any], ttl_seconds: Optional[int] = None) -> bool:
+# ==========================================================
+
+def kv_set(
+    key: str,
+    value: Dict[str, Any],
+    ttl_seconds: Optional[int] = None
+) -> bool:
     """
     Guarda un valor en Redis serializado como JSON.
-    :param key: Clave Redis
-    :param value: Diccionario a almacenar
-    :param ttl_seconds: Tiempo de expiración en segundos (opcional)
-    :return: True si fue exitoso
     """
     if not redis:
-        logger.warning("Redis not available - SET skipped")
         return False
 
     try:
@@ -44,11 +49,10 @@ def kv_set(key: str, value: Dict[str, Any], ttl_seconds: Optional[int] = None) -
 
         if ttl_seconds and ttl_seconds > 0:
             redis.set(key, serialized_value, ex=ttl_seconds)
-            logger.info(f"Redis SET key={key} ttl={ttl_seconds}s")
         else:
             redis.set(key, serialized_value)
-            logger.info(f"Redis SET key={key} (no ttl)")
 
+        logger.debug(f"Redis SET key={key} ttl={ttl_seconds}")
         return True
 
     except Exception as e:
@@ -56,27 +60,25 @@ def kv_set(key: str, value: Dict[str, Any], ttl_seconds: Optional[int] = None) -
         return False
 
 
-# ==============================
+# ==========================================================
 # GET
-# ==============================
+# ==========================================================
+
 def kv_get(key: str) -> Optional[Dict[str, Any]]:
     """
     Obtiene un valor desde Redis y lo deserializa.
-    :param key: Clave Redis
-    :return: Diccionario o None si no existe
     """
     if not redis:
-        logger.warning("Redis not available - GET skipped")
         return None
 
     try:
         result = redis.get(key)
 
         if not result:
-            logger.info(f"Redis GET key={key} -> MISS")
+            logger.debug(f"Redis GET key={key} -> MISS")
             return None
 
-        logger.info(f"Redis GET key={key} -> HIT")
+        logger.debug(f"Redis GET key={key} -> HIT")
         return json.loads(result)
 
     except Exception as e:
@@ -84,37 +86,21 @@ def kv_get(key: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-# ==============================
+# ==========================================================
 # DELETE
-# ==============================
+# ==========================================================
+
 def kv_delete(key: str) -> bool:
     """
     Elimina una clave de Redis.
     """
     if not redis:
-        logger.warning("Redis not available - DELETE skipped")
         return False
 
     try:
         redis.delete(key)
-        logger.info(f"Redis DELETE key={key}")
+        logger.debug(f"Redis DELETE key={key}")
         return True
     except Exception as e:
         logger.error(f"KV DELETE ERROR key={key}: {e}")
-        return False
-
-
-# ==============================
-# DEBUG (opcional)
-# ==============================
-def kv_exists(key: str) -> bool:
-    """
-    Verifica si una clave existe.
-    """
-    if not redis:
-        return False
-
-    try:
-        return bool(redis.exists(key))
-    except Exception:
         return False
