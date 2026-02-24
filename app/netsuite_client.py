@@ -22,46 +22,82 @@ TOKEN_KEY = "netsuite_oauth_token"
 def _refresh_access_token():
     logger.info("Refreshing NetSuite access token")
 
-    token_url = (
-        f"https://{NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/"
-        "services/rest/auth/oauth2/v2/token"
-    )
+    TOKEN_LOCK_KEY = "lock:oauth_refresh"
 
-    basic_auth = base64.b64encode(
-        f"{NETSUITE_CLIENT_ID}:{NETSUITE_CLIENT_SECRET}".encode()
-    ).decode()
+    # 1️⃣ Re-check por si otro proceso ya lo refrescó
+    cached = kv_get(TOKEN_KEY)
+    if cached and cached.get("expires_at", 0) > time.time():
+        logger.info("Token already refreshed by another instance")
+        return cached["access_token"]
 
-    headers = {
-        "Authorization": f"Basic {basic_auth}",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
+    # 2️⃣ Intentar adquirir lock distribuido
+    lock_acquired = redis.set(TOKEN_LOCK_KEY, "1", nx=True, ex=30)
 
-    payload = {
-        "grant_type": "refresh_token",
-        "refresh_token": NETSUITE_REFRESH_TOKEN,
-    }
+    if lock_acquired != "OK":
+        logger.info("Another instance is refreshing token. Waiting...")
 
-    response = requests.post(token_url, headers=headers, data=payload, timeout=30)
+        # Esperar hasta que desaparezca el lock
+        for _ in range(30):  # máx ~9 segundos
+            time.sleep(0.3)
+            cached = kv_get(TOKEN_KEY)
+            if cached and cached.get("expires_at", 0) > time.time():
+                logger.info("Token obtained after waiting")
+                return cached["access_token"]
 
-    if response.status_code >= 400:
-        logger.error(f"OAuth error {response.status_code}: {response.text}")
-        raise HTTPException(
-            status_code=502,
-            detail={"oauth_error": response.text}
+        logger.warning("Lock released but token not found, continuing refresh")
+
+    try:
+        token_url = (
+            f"https://{NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/"
+            "services/rest/auth/oauth2/v2/token"
         )
 
-    data = response.json()
+        basic_auth = base64.b64encode(
+            f"{NETSUITE_CLIENT_ID}:{NETSUITE_CLIENT_SECRET}".encode()
+        ).decode()
 
-    token_data = {
-        "access_token": data["access_token"],
-        "expires_at": time.time() + int(data.get("expires_in", 1800)) - 60
-    }
+        headers = {
+            "Authorization": f"Basic {basic_auth}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
 
-    kv_set(TOKEN_KEY, token_data, ttl_seconds=int(data.get("expires_in", 1800)))
+        payload = {
+            "grant_type": "refresh_token",
+            "refresh_token": NETSUITE_REFRESH_TOKEN,
+        }
 
-    logger.info("New access token cached")
+        response = requests.post(
+            token_url,
+            headers=headers,
+            data=payload,
+            timeout=30
+        )
 
-    return token_data["access_token"]
+        if response.status_code >= 400:
+            logger.error(f"OAuth error {response.status_code}: {response.text}")
+            raise HTTPException(
+                status_code=502,
+                detail={"oauth_error": response.text}
+            )
+
+        data = response.json()
+
+        expires_in = int(data.get("expires_in", 1800))
+
+        token_data = {
+            "access_token": data["access_token"],
+            "expires_at": time.time() + expires_in - 60
+        }
+
+        kv_set(TOKEN_KEY, token_data, ttl_seconds=expires_in)
+
+        logger.info("New access token cached")
+
+        return token_data["access_token"]
+
+    finally:
+        redis.delete(TOKEN_LOCK_KEY)
+        logger.info("OAuth refresh lock released")
 
 
 def get_access_token():
@@ -152,10 +188,10 @@ def call_restlet_with_cache(script_id: str, ttl: int = 60):
 
     logger.info(f"Cache miss for script {script_id}")
 
-    # 2️⃣ Intentar adquirir lock distribuido
+    # 2️⃣ Intentar adquirir lock distribuido correctamente
     lock_acquired = redis.set(lock_key, "1", nx=True, ex=120)
 
-    if lock_acquired:
+    if lock_acquired == "OK":
         logger.info(f"Lock acquired for script {script_id}")
 
         try:
@@ -171,10 +207,12 @@ def call_restlet_with_cache(script_id: str, ttl: int = 60):
             logger.info(f"Lock released for script {script_id}")
 
     else:
-        logger.info(f"Waiting for active request to finish for script {script_id}")
+        logger.info(f"Another request is active. Waiting...")
 
-        # Esperar hasta que el lock desaparezca
-        while redis.exists(lock_key):
+        # Esperar hasta que desaparezca el lock
+        for _ in range(400):  # máximo 120s
+            if not redis.exists(lock_key):
+                break
             time.sleep(0.3)
 
         cached = kv_get(cache_key)
