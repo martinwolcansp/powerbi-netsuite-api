@@ -1,12 +1,12 @@
-    # netsuite.py
-    from fastapi import APIRouter
-    from app.netsuite_client import call_restlet_with_cache
+# netsuite.py
+from fastapi import APIRouter
+from app.netsuite_client import call_restlet_with_cache
 
-    router = APIRouter(prefix="/netsuite")
+router = APIRouter(prefix="/netsuite")
 
 
 @router.get("/instalaciones")
-def instalaciones():
+    def instalaciones():
     data = call_restlet_with_cache("2089", ttl=300)
     
     # Log de totales
