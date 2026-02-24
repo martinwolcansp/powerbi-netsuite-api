@@ -2,7 +2,7 @@ from fastapi import FastAPI
 import logging
 import time
 
-from app.routers import netsuite, powerbi
+from app.routers import netsuite, powerbi, debug
 from app.redis_client import redis, kv_set, kv_get
 
 logging.basicConfig(
@@ -18,6 +18,7 @@ app = FastAPI(
 # Routers principales
 app.include_router(netsuite.router)
 app.include_router(powerbi.router)
+app.include_router(debug.router)
 
 
 @app.get("/")
