@@ -1,11 +1,11 @@
 from fastapi import APIRouter
-from app.netsuite_client import call_restlet
+from app.netsuite_client import call_restlet_with_cache
 
 router = APIRouter(prefix="/netsuite")
 
 @router.get("/instalaciones")
 def instalaciones():
-    data = call_restlet("2089")
+    data = call_restlet_with_cache("2089", ttl=60)
     return {
         "total_inst_caso": data.get("total_inst_caso", []),
         "lista_art_inst": data.get("lista_art_inst", []),

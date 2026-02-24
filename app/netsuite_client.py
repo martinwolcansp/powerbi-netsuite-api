@@ -9,7 +9,7 @@ from app.config import (
     NETSUITE_CLIENT_SECRET,
     NETSUITE_REFRESH_TOKEN,
 )
-from app.redis_client import kv_get, kv_set
+from app.redis_client import redis, kv_get, kv_set
 
 logger = logging.getLogger("netsuite")
 
@@ -134,3 +134,54 @@ def call_restlet(script_id: str, deploy_id: str = "1"):
         return response.json()
 
     raise HTTPException(status_code=502, detail="NetSuite call failed")
+
+    # ==========================================
+# Distributed Cache + Lock (Single Flight)
+# ==========================================
+
+def call_restlet_with_cache(script_id: str, ttl: int = 60):
+
+    cache_key = f"cache:{script_id}"
+    lock_key = f"lock:{script_id}"
+
+    # 1️⃣ Intentar cache
+    cached = kv_get(cache_key)
+    if cached:
+        logger.info(f"Cache hit for script {script_id}")
+        return cached
+
+    logger.info(f"Cache miss for script {script_id}")
+
+    # 2️⃣ Intentar adquirir lock distribuido
+    lock_acquired = redis.set(lock_key, "1", nx=True, ex=120)
+
+    if lock_acquired:
+        logger.info(f"Lock acquired for script {script_id}")
+
+        try:
+            data = call_restlet(script_id)
+
+            kv_set(cache_key, data, ttl_seconds=ttl)
+            logger.info(f"Cache saved for script {script_id}")
+
+            return data
+
+        finally:
+            redis.delete(lock_key)
+            logger.info(f"Lock released for script {script_id}")
+
+    else:
+        logger.info(f"Waiting for active request to finish for script {script_id}")
+
+        # Esperar hasta que el lock desaparezca
+        while redis.exists(lock_key):
+            time.sleep(0.3)
+
+        cached = kv_get(cache_key)
+
+        if cached:
+            logger.info(f"Cache available after wait for script {script_id}")
+            return cached
+
+        logger.warning("Lock released but no cache found, calling directly")
+        return call_restlet(script_id)
