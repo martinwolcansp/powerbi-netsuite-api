@@ -1,4 +1,4 @@
-#netsuite_client.py
+# netsuite_client.py
 import time
 import base64
 import requests
@@ -11,13 +11,14 @@ from app.config import (
     NETSUITE_REFRESH_TOKEN,
 )
 from app.redis_client import redis, kv_get, kv_set
-from app.services.netsuite_queue import netsuite_queue
-import asyncio
+import threading
 
 logger = logging.getLogger("netsuite")
 
 TOKEN_KEY = "netsuite_oauth_token"
 TOKEN_LOCK_KEY = "lock:oauth_refresh"
+
+locks = {}  # Locks por script_id para llamadas concurrentes
 
 
 # ==========================================================
@@ -25,21 +26,15 @@ TOKEN_LOCK_KEY = "lock:oauth_refresh"
 # ==========================================================
 
 def _wait_for_cache_with_backoff(key: str, timeout: int = 120):
-    """
-    Espera progresiva hasta que exista el key en Redis.
-    Reduce el número de requests innecesarios.
-    """
+    """Espera progresiva hasta que exista el key en Redis"""
     start = time.time()
-    delay = 0.2  # 200ms inicial
-
+    delay = 0.2
     while time.time() - start < timeout:
         value = kv_get(key)
         if value:
             return value
-
         time.sleep(delay)
-        delay = min(delay * 1.5, 1.0)  # máximo 1 segundo
-
+        delay = min(delay * 1.5, 1.0)
     return None
 
 
@@ -47,42 +42,8 @@ def _wait_for_cache_with_backoff(key: str, timeout: int = 120):
 # OAuth
 # ==========================================================
 
-def _refresh_access_token():
-    logger.info("Refreshing NetSuite access token")
-
-    # Re-check por si otra instancia ya lo refrescó
-    cached = kv_get(TOKEN_KEY)
-    if cached and cached.get("expires_at", 0) > time.time():
-        logger.info("Token already refreshed by another instance")
-        return cached["access_token"]
-
-    # Si no hay Redis, refrescar sin lock distribuido
-    if not redis:
-        logger.warning("Redis not available, refreshing without lock")
-        return _request_new_token()
-
-    # Intentar lock distribuido
-    lock_acquired = redis.set(TOKEN_LOCK_KEY, "1", nx=True, ex=30)
-
-    if not lock_acquired:
-        logger.info("Another instance is refreshing token. Waiting with backoff...")
-
-        token_data = _wait_for_cache_with_backoff(TOKEN_KEY, timeout=30)
-
-        if token_data and token_data.get("expires_at", 0) > time.time():
-            logger.info("Token obtained after waiting")
-            return token_data["access_token"]
-
-        logger.warning("Token not found after waiting, continuing refresh")
-
-    try:
-        return _request_new_token()
-    finally:
-        redis.delete(TOKEN_LOCK_KEY)
-        logger.info("OAuth refresh lock released")
-
-
 def _request_new_token():
+    """Pide un nuevo token OAuth a NetSuite"""
     token_url = (
         f"https://{NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/"
         "services/rest/auth/oauth2/v2/token"
@@ -102,19 +63,11 @@ def _request_new_token():
         "refresh_token": NETSUITE_REFRESH_TOKEN,
     }
 
-    response = requests.post(
-        token_url,
-        headers=headers,
-        data=payload,
-        timeout=30
-    )
+    response = requests.post(token_url, headers=headers, data=payload, timeout=30)
 
     if response.status_code >= 400:
         logger.error(f"OAuth error {response.status_code}: {response.text}")
-        raise HTTPException(
-            status_code=502,
-            detail={"oauth_error": response.text}
-        )
+        raise HTTPException(status_code=502, detail={"oauth_error": response.text})
 
     data = response.json()
     expires_in = int(data.get("expires_in", 1800))
@@ -126,66 +79,69 @@ def _request_new_token():
 
     kv_set(TOKEN_KEY, token_data, ttl_seconds=expires_in)
     logger.info("New access token cached")
-
     return token_data["access_token"]
+
+
+def _refresh_access_token():
+    """Refresca token usando lock distribuido"""
+    cached = kv_get(TOKEN_KEY)
+    if cached and cached.get("expires_at", 0) > time.time():
+        return cached["access_token"]
+
+    if not redis:
+        logger.warning("Redis no disponible, refrescando sin lock")
+        return _request_new_token()
+
+    lock_acquired = redis.set(TOKEN_LOCK_KEY, "1", nx=True, ex=30)
+    if not lock_acquired:
+        logger.info("Otra instancia refresca token, esperando...")
+        token_data = _wait_for_cache_with_backoff(TOKEN_KEY, timeout=30)
+        if token_data and token_data.get("expires_at", 0) > time.time():
+            return token_data["access_token"]
+        logger.warning("Token no disponible después de esperar, refrescando")
+
+    try:
+        return _request_new_token()
+    finally:
+        redis.delete(TOKEN_LOCK_KEY)
+        logger.info("Lock de OAuth liberado")
 
 
 def get_access_token():
     cached = kv_get(TOKEN_KEY)
-
     if cached and cached.get("expires_at", 0) > time.time():
         return cached["access_token"]
-
     return _refresh_access_token()
 
 
 # ==========================================================
-# Restlet Caller
+# Restlet Sync Caller
 # ==========================================================
 
 def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
-    """
-    Llamada síncrona a NetSuite, idéntica a la función anterior call_restlet.
-    """
+    """Llamada síncrona a NetSuite"""
     url = (
         f"https://{NETSUITE_ACCOUNT_ID}"
         ".restlets.api.netsuite.com/app/site/hosting/restlet.nl"
     )
 
-    params = {
-        "script": script_id,
-        "deploy": deploy_id
-    }
+    params = {"script": script_id, "deploy": deploy_id}
 
     for attempt in range(2):
-
         access_token = get_access_token()
-
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept": "application/json"
-        }
-
+        headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
         start = time.time()
 
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=60
-        )
+        response = requests.get(url, headers=headers, params=params, timeout=60)
 
         duration = round(time.time() - start, 2)
-
         logger.debug(
-            f"NetSuite call script={script_id} "
-            f"status={response.status_code} "
-            f"duration={duration}s "
-            f"attempt={attempt + 1}"
+            f"NetSuite call script={script_id} status={response.status_code} "
+            f"duration={duration}s attempt={attempt+1}"
         )
 
         if response.status_code == 401 and attempt == 0:
-            logger.warning("401 received, refreshing token and retrying")
+            logger.warning("401 recibido, refrescando token y reintentando")
             _refresh_access_token()
             continue
 
@@ -193,10 +149,7 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
             logger.error(f"NetSuite error: {response.text}")
             raise HTTPException(
                 status_code=502,
-                detail={
-                    "netsuite_status": response.status_code,
-                    "netsuite_error": response.text
-                }
+                detail={"netsuite_status": response.status_code, "netsuite_error": response.text}
             )
 
         return response.json()
@@ -205,31 +158,11 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
 
 
 # ==========================================================
-# Async wrapper para usar cola
-# ==========================================================
-
-
-async def call_restlet_async(script_id: str, deploy_id: str = "1"):
-    """
-    Wrapper async que ejecuta la request a NetSuite a través de la cola
-    """
-    async def job():
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _call_restlet_sync, script_id, deploy_id)
-
-    return await netsuite_queue.run(job_name=f"script_{script_id}", coro=job)
-
-
-# ==========================================================
-# Distributed Cache + Lock (Single Flight)
+# Cache Distribuido + Lock
 # ==========================================================
 
 def call_restlet_with_cache(script_id: str, ttl: int = 300):
-    """
-    Mantiene lógica de cache Redis existente, llama a call_restlet_async en lugar de sync
-    """
-    import asyncio
-
+    """Cache Redis + lock threading"""
     cache_key = f"cache:{script_id}"
     lock_key = f"lock:{script_id}"
 
@@ -240,30 +173,21 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300):
 
     logger.info(f"Cache miss for script {script_id}")
 
-    if not redis:
-        logger.warning("Redis not available, skipping distributed cache")
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(call_restlet_async(script_id))
+    # Lock threading local por script_id
+    if script_id not in locks:
+        locks[script_id] = threading.Lock()
 
-    lock_acquired = redis.set(lock_key, "1", nx=True, ex=120)
-    if lock_acquired:
-        logger.info(f"Lock acquired for script {script_id}")
-        try:
-            loop = asyncio.get_event_loop()
-            data = loop.run_until_complete(call_restlet_async(script_id))
-            kv_set(cache_key, data, ttl_seconds=ttl)
-            logger.info(f"Cache saved for script {script_id}")
-            return data
-        finally:
-            redis.delete(lock_key)
-            logger.info(f"Lock released for script {script_id}")
+    lock = locks[script_id]
 
-    logger.info("Another request is active. Waiting with backoff...")
-    cached = _wait_for_cache_with_backoff(cache_key, timeout=120)
-    if cached:
-        logger.info(f"Cache available after wait for script {script_id}")
-        return cached
+    with lock:
+        # Verificar cache nuevamente dentro del lock
+        cached = kv_get(cache_key)
+        if cached:
+            logger.info(f"Cache filled during wait for script {script_id}")
+            return cached
 
-    logger.warning("Timeout waiting for cache. Calling directly.")
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(call_restlet_async(script_id))
+        # Llamada real
+        data = _call_restlet_sync(script_id)
+        kv_set(cache_key, data, ttl_seconds=ttl)
+        logger.info(f"Cache saved for script {script_id}")
+        return data
