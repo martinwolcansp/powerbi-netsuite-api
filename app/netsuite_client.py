@@ -184,7 +184,7 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300):
     cache_key = f"cache:{script_id}"
     lock_key = f"lock:{script_id}"
 
-    # 1️⃣ Cache
+    # 1️⃣ Intentar cache primero
     cached = kv_get(cache_key)
     if cached:
         logger.info(f"Cache hit for script {script_id}")
@@ -192,21 +192,28 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300):
 
     logger.info(f"Cache miss for script {script_id}")
 
-    # Si no hay redis, llamar directo
+    # Si Redis no está disponible
     if not redis:
         logger.warning("Redis not available, skipping distributed cache")
         return call_restlet(script_id)
 
-    # 2️⃣ Lock
+    # 2️⃣ Intentar adquirir lock distribuido
     lock_acquired = redis.set(lock_key, "1", nx=True, ex=120)
 
-    if lock_acquired == "OK":
+    # 🔥 CORRECCIÓN CLAVE: Upstash devuelve True/False
+    if lock_acquired:
         logger.info(f"Lock acquired for script {script_id}")
 
         try:
             data = call_restlet(script_id)
+
+            logger.info(f"Saving cache for {cache_key}")
             kv_set(cache_key, data, ttl_seconds=ttl)
-            logger.info(f"Cache saved for script {script_id}")
+
+            # Verificación adicional
+            exists = redis.exists(cache_key)
+            logger.info(f"Cache saved? exists={exists}")
+
             return data
 
         finally:
@@ -216,11 +223,13 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300):
     else:
         logger.info("Another request is active. Waiting...")
 
-        for _ in range(400):
+        # Esperar hasta que desaparezca el lock
+        for _ in range(400):  # máx 120s
             if not redis.exists(lock_key):
                 break
             time.sleep(0.3)
 
+        # Intentar leer cache nuevamente
         cached = kv_get(cache_key)
         if cached:
             logger.info(f"Cache available after wait for script {script_id}")
