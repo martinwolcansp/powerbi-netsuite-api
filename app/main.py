@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 import logging
 import time
+
 from app.routers import netsuite, powerbi
 from app.redis_client import redis, kv_set, kv_get
 
@@ -14,21 +15,23 @@ app = FastAPI(
     version="3.0.0"
 )
 
+# Routers principales
 app.include_router(netsuite.router)
 app.include_router(powerbi.router)
 
 
 @app.get("/")
 def healthcheck():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "3.0.0"}
 
 
 # ==========================================
-# 🔍 DEBUG REDIS TEST
+# DEBUG REDIS TEST
 # ==========================================
 
 @app.get("/debug/redis-test")
 def redis_test():
+
     if not redis:
         return {"error": "Redis not configured"}
 
@@ -39,10 +42,8 @@ def redis_test():
         "timestamp": time.time()
     }
 
-    # Guardar con TTL 60 segundos
     kv_set(test_key, payload, ttl_seconds=60)
 
-    # Leer inmediatamente
     value = kv_get(test_key)
     ttl = redis.ttl(test_key)
 
