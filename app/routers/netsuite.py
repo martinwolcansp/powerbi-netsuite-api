@@ -1,27 +1,31 @@
+# netsuite.py
 from fastapi import APIRouter
 from app.netsuite_client import call_restlet_with_cache
 
 router = APIRouter(prefix="/netsuite")
 
+
 @router.get("/instalaciones")
 def instalaciones():
-    return call_restlet_with_cache("2089", ttl=300)
+    data = call_restlet_with_cache("2089", ttl=300)
     return {
         "total_inst_caso": data.get("total_inst_caso", []),
         "lista_art_inst": data.get("lista_art_inst", []),
         "total_art_caso": data.get("total_art_caso", [])
     }
 
+
 @router.get("/facturacion_areas_tecnicas")
 def facturacion():
-    data = call_restlet("2092")
+    data = call_restlet_with_cache("2092", ttl=300)
     return {
         "facturacion_areas_tecnicas": data.get("facturacion_areas_tecnicas", [])
     }
 
+
 @router.get("/comercial")
 def comercial():
-    data = call_restlet("2091")
+    data = call_restlet_with_cache("2091", ttl=300)
     return {
         "clientes_potenciales": data.get("clientes_potenciales", []),
         "oportunidades_cerradas": data.get("oportunidades_cerradas", [])
