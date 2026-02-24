@@ -6,6 +6,7 @@ router = APIRouter(prefix="/debug")
 
 @router.get("/redis-test")
 def redis_test():
+
     if not redis:
         return {"error": "Redis not configured"}
 
