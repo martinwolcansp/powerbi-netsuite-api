@@ -26,9 +26,6 @@ locks = {}  # Locks locales por script_id
 # ==========================================================
 
 def _wait_for_cache_with_backoff(key: str, timeout: int = 120):
-    """
-    Espera progresiva hasta que exista el key en Redis.
-    """
     inicio = time.time()
     delay = 0.2
 
@@ -41,9 +38,6 @@ def _wait_for_cache_with_backoff(key: str, timeout: int = 120):
 
     return None
 
-# ==========================================================
-# Formato tiempo restante OAuth
-# ==========================================================
 
 def _formatear_tiempo_restante(segundos: int) -> str:
     dias = segundos // 86400
@@ -58,8 +52,6 @@ def _formatear_tiempo_restante(segundos: int) -> str:
 # ==========================================================
 
 def _request_new_token():
-    """Solicita un nuevo token OAuth a NetSuite"""
-
     logger.info("Solicitando NUEVO token OAuth a NetSuite")
 
     token_url = (
@@ -92,7 +84,7 @@ def _request_new_token():
 
     token_data = {
         "access_token": data["access_token"],
-        "expires_at": time.time() + expires_in - 60  # margen de seguridad
+        "expires_at": time.time() + expires_in - 60
     }
 
     kv_set(TOKEN_KEY, token_data, ttl_seconds=expires_in)
@@ -101,21 +93,20 @@ def _request_new_token():
         "Nuevo token OAuth almacenado en cache. "
         f"Validez aproximada: {_formatear_tiempo_restante(expires_in)} "
         "(se renueva 60s antes de expirar)."
-    )   
+    )
 
-return token_data["access_token"]
+    return token_data["access_token"]
 
 
 def _refresh_access_token():
-    """Refresca el token usando lock distribuido"""
 
     cached = kv_get(TOKEN_KEY)
 
     if cached and cached.get("expires_at", 0) > time.time():
         restante = round(cached["expires_at"] - time.time())
         logger.info(
-            f"Token OAuth aún válido. "
-            f"Tiempo restante: {restante} segundos."
+            "Token OAuth aún válido. "
+            f"Tiempo restante: {_formatear_tiempo_restante(restante)}"
         )
         return cached["access_token"]
 
@@ -138,7 +129,7 @@ def _refresh_access_token():
                 "Token obtenido tras espera. "
                 f"Tiempo restante: {_formatear_tiempo_restante(restante)}"
             )
-                        return token_data["access_token"]
+            return token_data["access_token"]
 
         logger.warning("No se obtuvo token tras esperar. Forzando refresh.")
 
@@ -150,6 +141,7 @@ def _refresh_access_token():
 
 
 def get_access_token():
+
     cached = kv_get(TOKEN_KEY)
 
     if cached and cached.get("expires_at", 0) > time.time():
@@ -169,7 +161,6 @@ def get_access_token():
 # ==========================================================
 
 def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
-    """Llamada síncrona al RESTlet de NetSuite"""
 
     url = (
         f"https://{NETSUITE_ACCOUNT_ID}"
@@ -230,7 +221,6 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
 # ==========================================================
 
 def call_restlet_with_cache(script_id: str, ttl: int = 300):
-    """Cache Redis + Lock local por script_id"""
 
     cache_key = f"cache:{script_id}"
 
@@ -252,8 +242,7 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300):
         cached = kv_get(cache_key)
         if cached:
             logger.info(
-                f"Cache completada mientras se esperaba lock "
-                f"para script {script_id}"
+                f"Cache completada mientras se esperaba lock para script {script_id}"
             )
             return cached
 
