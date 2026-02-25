@@ -11,11 +11,15 @@ logger = logging.getLogger("netsuite")
 def instalaciones():
     data = call_restlet_with_cache("2089", ttl=300)
 
+    total_inst_caso = len(data.get("total_inst_caso", []))
+    lista_art_inst = len(data.get("lista_art_inst", []))
+    total_art_caso = len(data.get("total_art_caso", []))
+
     logger.info(
-        f"Endpoint /instalaciones called, "
-        f"total_inst_caso={len(data.get('total_inst_caso', []))}, "
-        f"lista_art_inst={len(data.get('lista_art_inst', []))}, "
-        f"total_art_caso={len(data.get('total_art_caso', []))}"
+        "Endpoint /instalaciones ejecutado. "
+        f"Instalaciones del caso: {total_inst_caso}, "
+        f"Artículos instalados listados: {lista_art_inst}, "
+        f"Total de artículos del caso: {total_art_caso}."
     )
 
     return {
@@ -29,9 +33,11 @@ def instalaciones():
 def facturacion():
     data = call_restlet_with_cache("2092", ttl=300)
 
+    total_rows = len(data.get("facturacion_areas_tecnicas", []))
+
     logger.info(
-        f"Endpoint /facturacion_areas_tecnicas called, "
-        f"total_rows={len(data.get('facturacion_areas_tecnicas', []))}"
+        "Endpoint /facturacion_areas_tecnicas ejecutado. "
+        f"Registros devueltos: {total_rows}."
     )
 
     return {
@@ -43,10 +49,13 @@ def facturacion():
 def comercial():
     data = call_restlet_with_cache("2091", ttl=300)
 
+    clientes_potenciales = len(data.get("clientes_potenciales", []))
+    oportunidades_cerradas = len(data.get("oportunidades_cerradas", []))
+
     logger.info(
-        f"Endpoint /comercial called, "
-        f"clientes_potenciales={len(data.get('clientes_potenciales', []))}, "
-        f"oportunidades_cerradas={len(data.get('oportunidades_cerradas', []))}"
+        "Endpoint /comercial ejecutado. "
+        f"Clientes potenciales: {clientes_potenciales}, "
+        f"Oportunidades cerradas: {oportunidades_cerradas}."
     )
 
     return {

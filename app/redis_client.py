@@ -1,4 +1,4 @@
-#redis_client.py
+# redis_client.py
 import json
 import logging
 from typing import Optional, Dict, Any
@@ -21,12 +21,14 @@ if UPSTASH_REDIS_URL and UPSTASH_REDIS_TOKEN:
             url=UPSTASH_REDIS_URL,
             token=UPSTASH_REDIS_TOKEN,
         )
-        logger.info("Redis initialized successfully")
+        logger.info("Cliente Redis inicializado correctamente.")
     except Exception as e:
-        logger.error(f"Redis initialization error: {e}")
+        logger.error(f"Error al inicializar Redis: {e}")
         redis = None
 else:
-    logger.warning("Redis not configured (missing URL or TOKEN)")
+    logger.warning(
+        "Redis no configurado: faltan variables UPSTASH_REDIS_URL o UPSTASH_REDIS_TOKEN."
+    )
 
 
 # ==========================================================
@@ -42,6 +44,7 @@ def kv_set(
     Guarda un valor en Redis serializado como JSON.
     """
     if not redis:
+        logger.debug("Intento de SET ignorado: Redis no está disponible.")
         return False
 
     try:
@@ -49,14 +52,19 @@ def kv_set(
 
         if ttl_seconds and ttl_seconds > 0:
             redis.set(key, serialized_value, ex=ttl_seconds)
+            logger.debug(
+                f"Clave almacenada en Redis: key={key}, TTL={ttl_seconds} segundos."
+            )
         else:
             redis.set(key, serialized_value)
+            logger.debug(
+                f"Clave almacenada en Redis: key={key}, sin expiración."
+            )
 
-        logger.debug(f"Redis SET key={key} ttl={ttl_seconds}")
         return True
 
     except Exception as e:
-        logger.error(f"KV SET ERROR key={key}: {e}")
+        logger.error(f"Error en KV SET para key={key}: {e}")
         return False
 
 
@@ -69,20 +77,21 @@ def kv_get(key: str) -> Optional[Dict[str, Any]]:
     Obtiene un valor desde Redis y lo deserializa.
     """
     if not redis:
+        logger.debug("Intento de GET ignorado: Redis no está disponible.")
         return None
 
     try:
         result = redis.get(key)
 
         if not result:
-            logger.debug(f"Redis GET key={key} -> MISS")
+            logger.debug(f"Redis GET key={key} → SIN RESULTADO (MISS).")
             return None
 
-        logger.debug(f"Redis GET key={key} -> HIT")
+        logger.debug(f"Redis GET key={key} → ENCONTRADO (HIT).")
         return json.loads(result)
 
     except Exception as e:
-        logger.error(f"KV GET ERROR key={key}: {e}")
+        logger.error(f"Error en KV GET para key={key}: {e}")
         return None
 
 
@@ -95,12 +104,13 @@ def kv_delete(key: str) -> bool:
     Elimina una clave de Redis.
     """
     if not redis:
+        logger.debug("Intento de DELETE ignorado: Redis no está disponible.")
         return False
 
     try:
         redis.delete(key)
-        logger.debug(f"Redis DELETE key={key}")
+        logger.debug(f"Clave eliminada de Redis: key={key}.")
         return True
     except Exception as e:
-        logger.error(f"KV DELETE ERROR key={key}: {e}")
+        logger.error(f"Error en KV DELETE para key={key}: {e}")
         return False
