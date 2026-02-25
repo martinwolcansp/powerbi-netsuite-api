@@ -103,7 +103,7 @@ def _request_new_token():
         "(se renueva 60s antes de expirar)."
     )   
 
-    return token_data["access_token"]
+return token_data["access_token"]
 
 
 def _refresh_access_token():
