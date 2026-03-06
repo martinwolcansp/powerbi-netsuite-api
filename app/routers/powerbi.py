@@ -8,57 +8,58 @@ router = APIRouter(prefix="/powerbi")
 logger = logging.getLogger("powerbi")
 
 
-@router.get("/instalaciones")
-def instalaciones(x_api_key: str = Header(...)):
-    if x_api_key != POWERBI_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
+# ==========================================================
+# Función generadora de endpoints PowerBI
+# ==========================================================
 
-    data = call_restlet_with_cache("2089", ttl=300)
-    logger.info(f"PowerBI /instalaciones returned {len(data.get('total_inst_caso', []))} rows")
-    
-    return {
-        "rows": data
-    }
+def create_powerbi_endpoint(route: str, script_id: str, log_key: str):
+    @router.get(route)
+    def endpoint(x_api_key: str = Header(...)):
 
+        # Validación API Key
+        if x_api_key != POWERBI_API_KEY:
+            raise HTTPException(status_code=401, detail="Invalid API Key")
 
-@router.get("/facturacion_areas_tecnicas")
-def facturacion(x_api_key: str = Header(...)):
-    if x_api_key != POWERBI_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
+        # Llamada al Restlet con cache
+        data = call_restlet_with_cache(script_id, ttl=300)
 
-    data = call_restlet_with_cache("2092", ttl=300)
-    logger.info(f"PowerBI /facturacion_areas_tecnicas returned {len(data.get('facturacion_areas_tecnicas', []))} rows")
+        # Logging
+        logger.info(
+            f"PowerBI {route} returned {len(data.get(log_key, []))} rows"
+        )
 
-    return {
-        "rows": data
-    }
+        # Respuesta estándar
+        return {
+            "rows": data
+        }
 
-
-@router.get("/comercial")
-def comercial(x_api_key: str = Header(...)):
-    if x_api_key != POWERBI_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
-
-    data = call_restlet_with_cache("2091", ttl=300)
-    logger.info(f"PowerBI /comercial returned {len(data.get('clientes_potenciales', []))} clientes potenciales")
-
-    return {
-        "rows": data
-    }
+    return endpoint
 
 
-@router.get("/posventa")
-def posventa(x_api_key: str = Header(...)):
+# ==========================================================
+# Endpoints PowerBI
+# ==========================================================
 
-    if x_api_key != POWERBI_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
+create_powerbi_endpoint(
+    "/instalaciones",
+    "2089",
+    "total_inst_caso"
+)
 
-    data = call_restlet_with_cache("2121", ttl=300)
+create_powerbi_endpoint(
+    "/facturacion_areas_tecnicas",
+    "2092",
+    "facturacion_areas_tecnicas"
+)
 
-    logger.info(
-        f"PowerBI /posventa returned {len(data.get('relev_posventa', []))} rows"
-    )
+create_powerbi_endpoint(
+    "/comercial",
+    "2091",
+    "clientes_potenciales"
+)
 
-    return {
-        "rows": data
-    }
+create_powerbi_endpoint(
+    "/posventa",
+    "2121",
+    "relev_posventa"
+)
