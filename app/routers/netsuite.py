@@ -139,3 +139,33 @@ def comercial():
         "clientes_potenciales": data.get("clientes_potenciales", []),
         "oportunidades_cerradas": data.get("oportunidades_cerradas", [])
     }
+
+    # ==========================================================
+    # Endpoint: Posventa
+    # ==========================================================
+
+@router.get("/posventa")
+def posventa():
+        """
+    Endpoint que expone datos del Restlet script_id=2095.
+
+    Contiene información de:
+    - total_inst_caso
+    - relev_posventa
+    """
+
+    data = call_restlet_with_cache("2095", ttl=300)
+
+    total_inst_caso = len(data.get("total_inst_caso", []))
+    relev_posventa = len(data.get("relev_posventa", []))
+
+    logger.info(
+        "Endpoint /posventa ejecutado. "
+        f"Instalaciones del caso: {total_inst_caso}, "
+        f"Relevamientos posventa: {relev_posventa}."
+    )
+
+    return {
+        "total_inst_caso": data.get("total_inst_caso", []),
+        "relev_posventa": data.get("relev_posventa", [])
+    }
