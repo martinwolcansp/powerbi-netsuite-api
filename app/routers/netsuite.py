@@ -140,13 +140,13 @@ def comercial():
         "oportunidades_cerradas": data.get("oportunidades_cerradas", [])
     }
 
-    # ==========================================================
-    # Endpoint: Posventa
-    # ==========================================================
+# ==========================================================
+# Endpoint: Posventa
+# ==========================================================
 
 @router.get("/posventa")
 def posventa():
-        """
+    """
     Endpoint que expone datos del Restlet script_id=2095.
 
     Contiene información de:
