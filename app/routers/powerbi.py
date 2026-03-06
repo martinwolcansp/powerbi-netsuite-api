@@ -53,7 +53,7 @@ def posventa(x_api_key: str = Header(...)):
     if x_api_key != POWERBI_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
-    data = call_restlet_with_cache("2095", ttl=300)
+    data = call_restlet_with_cache("2121", ttl=300)
 
     logger.info(
         f"PowerBI /posventa returned {len(data.get('relev_posventa', []))} rows"
