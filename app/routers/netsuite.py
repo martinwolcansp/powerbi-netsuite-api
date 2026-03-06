@@ -147,14 +147,14 @@ def comercial():
 @router.get("/posventa")
 def posventa():
     """
-    Endpoint que expone datos del Restlet script_id=2095.
+    Endpoint que expone datos del Restlet script_id=2121.
 
     Contiene información de:
     - total_inst_caso
     - relev_posventa
     """
 
-    data = call_restlet_with_cache("2095", ttl=300)
+    data = call_restlet_with_cache("2121", ttl=300)
 
     total_inst_caso = len(data.get("total_inst_caso", []))
     relev_posventa = len(data.get("relev_posventa", []))
