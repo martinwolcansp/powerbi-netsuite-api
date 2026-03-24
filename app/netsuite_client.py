@@ -17,17 +17,15 @@ from app.config import (
 from app.redis_client import redis, kv_get, kv_set
 import threading
 
-# Logger específico del módulo para trazabilidad de OAuth,
-# llamadas a NetSuite y comportamiento de cache.
+# Logger específico del módulo
 logger = logging.getLogger("netsuite")
 
 # Claves utilizadas en Redis / KV Store
-TOKEN_KEY = "netsuite_oauth_token"       # Donde se almacena el token OAuth
-TOKEN_LOCK_KEY = "lock:oauth_refresh"    # Lock distribuido para evitar refresh concurrente
+TOKEN_KEY = "netsuite_oauth_token"
+TOKEN_LOCK_KEY = "lock:oauth_refresh"
 
-# Locks en memoria (por proceso) para evitar llamadas duplicadas
-# a un mismo script_id dentro de la misma instancia.
-locks = {}  # Locks locales por script_id
+# Locks locales por script_id
+locks = {}
 
 
 # ==========================================================
@@ -229,18 +227,13 @@ def get_access_token():
 
 
 # ==========================================================
-# Restlet Sync Caller
+# Restlet Sync Caller (modificado para aceptar params)
 # ==========================================================
 
-def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
+def _call_restlet_sync(script_id: str, deploy_id: str = "1", params: dict | None = None):
     """
     Invoca un Restlet de NetSuite de forma sincrónica.
-
-    Características importantes:
-    - Usa Bearer Token OAuth.
-    - Retry automático UNA vez si recibe 401.
-    - Logging de duración y status.
-    - Traduce errores >=400 en HTTPException 502.
+    Ahora acepta params dinámicos que se pasan a la request.
     """
 
     url = (
@@ -248,11 +241,11 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
         ".restlets.api.netsuite.com/app/site/hosting/restlet.nl"
     )
 
-    params = {"script": script_id, "deploy": deploy_id}
+    # Parámetros base con script y deploy
+    request_params = {"script": script_id, "deploy": deploy_id}
+    if params:
+        request_params.update(params)  # 👈 Agregado
 
-    # Se permiten hasta 2 intentos:
-    # - Intento 1 normal
-    # - Intento 2 solo si el primero fue 401
     for attempt in range(2):
 
         access_token = get_access_token()
@@ -267,7 +260,7 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
         response = requests.get(
             url,
             headers=headers,
-            params=params,
+            params=request_params,  # 👈 Usamos request_params que incluye params dinámicos
             timeout=60
         )
 
@@ -280,7 +273,6 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
             f"intento={attempt+1}"
         )
 
-        # Si el token expiró entre validación y request
         if response.status_code == 401 and attempt == 0:
             logger.warning("401 recibido. Refrescando token y reintentando.")
             _refresh_access_token()
@@ -298,40 +290,32 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1"):
 
         return response.json()
 
-    # Si ambos intentos fallan
     raise HTTPException(status_code=502, detail="Fallo definitivo al invocar NetSuite")
 
 
 # ==========================================================
-# Cache Distribuido + Lock Local
+# Cache Distribuido + Lock Local (modificado para params)
 # ==========================================================
-
-def call_restlet_with_cache(script_id: str, ttl: int = 300):
+def call_restlet_with_cache(script_id: str, ttl: int = 300, params: dict | None = None):
     """
     Wrapper que agrega:
     - Cache distribuido (Redis)
     - Lock local por proceso
     - Prevención de llamadas duplicadas simultáneas
-
-    Flujo:
-    1. Busca en cache distribuido.
-    2. Si MISS → adquiere lock local.
-    3. Revalida cache (doble chequeo).
-    4. Llama a NetSuite.
-    5. Guarda resultado en cache con TTL configurable.
+    Ahora acepta params dinámicos que afectan la cache.
     """
 
-    cache_key = f"cache:{script_id}"
+    # Cache key incluye params para diferenciarlas
+    import json
+    cache_key = f"cache:{script_id}:{json.dumps(params or {}, sort_keys=True)}"
 
     cached = kv_get(cache_key)
-
     if cached:
-        logger.info(f"Cache HIT para script {script_id}")
+        logger.info(f"Cache HIT para script {script_id} con params {params}")
         return cached
 
-    logger.info(f"Cache MISS para script {script_id}")
+    logger.info(f"Cache MISS para script {script_id} con params {params}")
 
-    # Inicializa lock local si no existe
     if script_id not in locks:
         locks[script_id] = threading.Lock()
 
@@ -339,24 +323,21 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300):
 
     with lock:
 
-        # Doble verificación luego de adquirir lock
         cached = kv_get(cache_key)
         if cached:
             logger.info(
-                f"Cache completada mientras se esperaba lock para script {script_id}"
+                f"Cache completada mientras se esperaba lock para script {script_id} con params {params}"
             )
             return cached
 
-        logger.info(f"Invocando NetSuite para script {script_id}")
+        logger.info(f"Invocando NetSuite para script {script_id} con params {params}")
 
-        data = _call_restlet_sync(script_id)
+        data = _call_restlet_sync(script_id, params=params)  # 👈 Pasamos params
 
-        # Persistencia en cache distribuido
         kv_set(cache_key, data, ttl_seconds=ttl)
-
         logger.info(
             f"Datos almacenados en cache para script {script_id}. "
-            f"TTL configurado: {ttl} segundos."
+            f"TTL configurado: {ttl} segundos. Params: {params}"
         )
 
         return data

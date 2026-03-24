@@ -14,21 +14,32 @@ logger = logging.getLogger("powerbi")
 
 def create_powerbi_endpoint(route: str, script_id: str, log_key: str):
     @router.get(route)
-    def endpoint(x_api_key: str = Header(...)):
+    def endpoint(
+        x_api_key: str = Header(...),
+        case_assigned: str | None = None  # 👈 NUEVO
+    ):
 
         # Validación API Key
         if x_api_key != POWERBI_API_KEY:
             raise HTTPException(status_code=401, detail="Invalid API Key")
 
+        # 👉 Params dinámicos
+        params = {}
+        if case_assigned:
+            params["case_assigned"] = case_assigned
+
         # Llamada al Restlet con cache
-        data = call_restlet_with_cache(script_id, ttl=300)
+        data = call_restlet_with_cache(
+            script_id,
+            ttl=300,
+            params=params  # 👈 NUEVO
+        )
 
         # Logging
         logger.info(
             f"PowerBI {route} returned {len(data.get(log_key, []))} rows"
         )
 
-        # Respuesta estándar
         return {
             "rows": data
         }
