@@ -29,10 +29,15 @@ def instalaciones(case_assigned: str | None = None):
     /netsuite/instalaciones?case_assigned=123
     """
 
+    # 🔍 DEBUG: ver qué llega desde Power BI / navegador
+    logger.info(f"case_assigned recibido: {case_assigned}")
+
     # Construcción de parámetros dinámicos
     params = {}
     if case_assigned:
         params["case_assigned"] = case_assigned
+
+    logger.info(f"params enviados a NetSuite: {params}")
 
     # Llamada a NetSuite con cache
     data = call_restlet_with_cache(
