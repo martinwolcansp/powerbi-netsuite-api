@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 import logging
 
-from app.routers import netsuite, powerbi
+from app.routers import netsuite
 
 # Logging más limpio
 logging.basicConfig(
@@ -17,7 +17,6 @@ app = FastAPI(
 )
 
 app.include_router(netsuite.router)
-app.include_router(powerbi.router)
 
 @app.get("/")
 def healthcheck():
