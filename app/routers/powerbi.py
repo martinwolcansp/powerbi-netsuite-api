@@ -1,6 +1,5 @@
 # powerbi.py
-from fastapi import APIRouter, Header, HTTPException
-from app.config import POWERBI_API_KEY
+from fastapi import APIRouter
 from app.netsuite_client import call_restlet_with_cache
 import logging
 
@@ -9,68 +8,44 @@ logger = logging.getLogger("powerbi")
 
 
 # ==========================================================
-# Función generadora de endpoints PowerBI
-# ==========================================================
-
-def create_powerbi_endpoint(route: str, script_id: str, log_key: str):
-    @router.get(route)
-    def endpoint(
-        x_api_key: str = Header(...),
-        case_assigned: str | None = None  # 👈 NUEVO
-    ):
-
-        # Validación API Key
-        if x_api_key != POWERBI_API_KEY:
-            raise HTTPException(status_code=401, detail="Invalid API Key")
-
-        # 👉 Params dinámicos
-        params = {}
-        if case_assigned:
-            params["case_assigned"] = case_assigned
-
-        # Llamada al Restlet con cache
-        data = call_restlet_with_cache(
-            script_id,
-            ttl=300,
-            params=params  # 👈 NUEVO
-        )
-
-        # Logging
-        logger.info(
-            f"PowerBI {route} returned {len(data.get(log_key, []))} rows"
-        )
-
-        return {
-            "rows": data
-        }
-
-    return endpoint
-
-
-# ==========================================================
 # Endpoints PowerBI
 # ==========================================================
 
-create_powerbi_endpoint(
-    "/instalaciones",
-    "2089",
-    "total_inst_caso"
-)
+@router.get("/instalaciones")
+def instalaciones(case_assigned: str | None = None):
+    """
+    Endpoint para Power BI.
+    - case_assigned: parámetro opcional para filtrar casos en NetSuite.
+    """
 
-create_powerbi_endpoint(
-    "/facturacion_areas_tecnicas",
-    "2092",
-    "facturacion_areas_tecnicas"
-)
+    # Construimos params dinámicos para el Restlet
+    params = {}
+    if case_assigned:
+        params["case_assigned"] = case_assigned
 
-create_powerbi_endpoint(
-    "/comercial",
-    "2091",
-    "clientes_potenciales"
-)
+    # Llamada al Restlet con cache
+    data = call_restlet_with_cache("2089", ttl=300, params=params)
 
-create_powerbi_endpoint(
-    "/posventa",
-    "2121",
-    "relev_posventa"
-)
+    logger.info(
+        f"PowerBI /instalaciones returned {len(data.get('total_inst_caso', []))} rows"
+    )
+
+    return {"rows": data}
+
+
+@router.get("/facturacion_areas_tecnicas")
+def facturacion_areas_tecnicas():
+    data = call_restlet_with_cache("2092", ttl=300)
+    return {"rows": data}
+
+
+@router.get("/comercial")
+def comercial():
+    data = call_restlet_with_cache("2091", ttl=300)
+    return {"rows": data}
+
+
+@router.get("/posventa")
+def posventa():
+    data = call_restlet_with_cache("2121", ttl=300)
+    return {"rows": data}

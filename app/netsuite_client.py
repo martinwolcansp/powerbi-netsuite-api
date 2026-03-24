@@ -233,7 +233,7 @@ def get_access_token():
 def _call_restlet_sync(script_id: str, deploy_id: str = "1", params: dict | None = None):
     """
     Invoca un Restlet de NetSuite de forma sincrónica.
-    Ahora acepta params dinámicos que se pasan a la request.
+    Acepta params dinámicos que se pasan a la request.
     """
 
     url = (
@@ -241,15 +241,14 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1", params: dict | None
         ".restlets.api.netsuite.com/app/site/hosting/restlet.nl"
     )
 
-    # Parámetros base con script y deploy
+    # Parámetros base
     request_params = {"script": script_id, "deploy": deploy_id}
     if params:
-        request_params.update(params)  # 👈 Agregado
+        request_params.update(params)
 
     for attempt in range(2):
 
         access_token = get_access_token()
-
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json"
@@ -260,7 +259,7 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1", params: dict | None
         response = requests.get(
             url,
             headers=headers,
-            params=request_params,  # 👈 Usamos request_params que incluye params dinámicos
+            params=request_params,
             timeout=60
         )
 
@@ -302,11 +301,12 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300, params: dict | None 
     - Cache distribuido (Redis)
     - Lock local por proceso
     - Prevención de llamadas duplicadas simultáneas
-    Ahora acepta params dinámicos que afectan la cache.
+    - Params dinámicos que afectan la cache
     """
 
-    # Cache key incluye params para diferenciarlas
     import json
+
+    # La clave de cache ahora incluye params para diferenciar queries
     cache_key = f"cache:{script_id}:{json.dumps(params or {}, sort_keys=True)}"
 
     cached = kv_get(cache_key)
@@ -322,7 +322,6 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300, params: dict | None 
     lock = locks[script_id]
 
     with lock:
-
         cached = kv_get(cache_key)
         if cached:
             logger.info(
@@ -331,13 +330,11 @@ def call_restlet_with_cache(script_id: str, ttl: int = 300, params: dict | None 
             return cached
 
         logger.info(f"Invocando NetSuite para script {script_id} con params {params}")
-
-        data = _call_restlet_sync(script_id, params=params)  # 👈 Pasamos params
+        data = _call_restlet_sync(script_id, params=params)
 
         kv_set(cache_key, data, ttl_seconds=ttl)
         logger.info(
-            f"Datos almacenados en cache para script {script_id}. "
-            f"TTL configurado: {ttl} segundos. Params: {params}"
+            f"Datos almacenados en cache para script {script_id}. TTL: {ttl} segundos. Params: {params}"
         )
 
         return data
