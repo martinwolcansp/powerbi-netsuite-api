@@ -260,7 +260,7 @@ def _call_restlet_sync(script_id: str, deploy_id: str = "1", params: dict | None
             url,
             headers=headers,
             params=request_params,
-            timeout=60
+            timeout=120
         )
 
         duracion = round(time.time() - inicio, 2)
