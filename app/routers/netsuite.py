@@ -95,8 +95,20 @@ def comercial():
 # Endpoint: Posventa
 # ==========================================================
 @router.get("/posventa")
-def posventa():
-    data = call_restlet_with_cache("2121", ttl=300)
+def posventa(case_assigned: str | None = Query(None, description="Filtrar instalaciones por case_assigned")):
+    """
+    Endpoint de posventa.
+
+    Nota:
+    - El filtro case_assigned SOLO aplica a total_inst_caso
+    - relev_posventa siempre trae todos los datos
+    """
+
+    logger.info(f"case_assigned recibido en posventa: {case_assigned}")
+
+    params = {"case_assigned": case_assigned} if case_assigned else None
+
+    data = call_restlet_with_cache("2121", ttl=300, params=params)
 
     total_inst_caso = len(data.get("total_inst_caso", []))
     relev_posventa = len(data.get("relev_posventa", []))
