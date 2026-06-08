@@ -96,13 +96,6 @@ def comercial():
 # ==========================================================
 @router.get("/posventa")
 def posventa(case_assigned: str | None = Query(None, description="Filtrar instalaciones por case_assigned")):
-    """
-    Endpoint de posventa.
-
-    Nota:
-    - El filtro case_assigned SOLO aplica a total_inst_caso
-    - relev_posventa siempre trae todos los datos
-    """
 
     logger.info(f"case_assigned recibido en posventa: {case_assigned}")
 
@@ -112,14 +105,17 @@ def posventa(case_assigned: str | None = Query(None, description="Filtrar instal
 
     total_inst_caso = len(data.get("total_inst_caso", []))
     relev_posventa = len(data.get("relev_posventa", []))
+    oportunidades_articulos = len(data.get("oportunidades_articulos", []))
 
     logger.info(
         f"Endpoint /posventa ejecutado. "
         f"Instalaciones del caso: {total_inst_caso}, "
-        f"Relevamientos posventa: {relev_posventa}."
+        f"Relevamientos posventa: {relev_posventa}, "
+        f"Oportunidades artículos: {oportunidades_articulos}."
     )
 
     return {
         "total_inst_caso": data.get("total_inst_caso", []),
-        "relev_posventa": data.get("relev_posventa", [])
+        "relev_posventa": data.get("relev_posventa", []),
+        "oportunidades_articulos": data.get("oportunidades_articulos", [])
     }
